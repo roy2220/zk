@@ -67,7 +67,7 @@ type SessionListener struct {
 	stateChanges chan StateChange
 }
 
-func (self *SessionListener) GetStateChanges() <-chan StateChange {
+func (self *SessionListener) StateChanges() <-chan StateChange {
 	return self.stateChanges
 }
 
@@ -131,7 +131,7 @@ func (self *Watcher) GetPath() string {
 	return self.path
 }
 
-func (self *Watcher) WaitForEvent() <-chan WatcherEvent {
+func (self *Watcher) Event() <-chan WatcherEvent {
 	return self.event
 }
 
@@ -653,7 +653,7 @@ func (self *session) authenticate(context_ context.Context, transport_ *transpor
 
 func (self *session) rewatch(context_ context.Context, transport_ *transport) error {
 	requests := []setWatches{}
-	paths := [3][]string{}
+	paths := [...][]string{[]string{}, []string{}, []string{}}
 	requestSize := setWatchesOverheadSize
 
 	for watcherType, path2Watchers := range self.watchers {
@@ -680,7 +680,7 @@ func (self *session) rewatch(context_ context.Context, transport_ *transport) er
 					ChildWatches: paths[WatcherChild],
 				})
 
-				paths = [3][]string{}
+				paths = [...][]string{[]string{}, []string{}, []string{}}
 				requestSize = setWatchesOverheadSize
 			}
 
@@ -689,16 +689,13 @@ func (self *session) rewatch(context_ context.Context, transport_ *transport) er
 		}
 	}
 
-	if requestSize > maxSetWatchesSize {
+	if requestSize > setWatchesOverheadSize {
 		requests = append(requests, setWatches{
 			RelativeZxid: self.lastZxid,
 			DataWatches:  paths[WatcherData],
 			ExistWatches: paths[WatcherExist],
 			ChildWatches: paths[WatcherChild],
 		})
-
-		paths = [3][]string{}
-		requestSize = setWatchesOverheadSize
 	}
 
 	for i := range requests {

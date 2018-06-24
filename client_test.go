@@ -24,7 +24,7 @@ func TestClient1(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 
 		go func() {
-			time.Sleep(time.Second)
+			time.Sleep(time.Second / 2)
 			cancel()
 		}()
 
@@ -50,7 +50,7 @@ func TestClient2(t *testing.T) {
 	{
 		var c Client
 		c.Initialize(&SessionPolicy{}, serverAddresses, nil, nil, "/")
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second/2)
 
 		if e := c.Run(ctx); e != context.DeadlineExceeded {
 			t.Errorf("%v", e)
@@ -86,6 +86,67 @@ func TestClientCreateAndDelete(t *testing.T) {
 			}
 		}
 
+		cancel()
+	}()
+
+	if e := c.Run(ctx); e != context.Canceled {
+		t.Errorf("%v", e)
+	}
+}
+
+func TestClientExists(t *testing.T) {
+	var c Client
+	c.Initialize(&SessionPolicy{}, serverAddresses, nil, nil, "/")
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		rsp, w, e := c.ExistsW(ctx, "foo", true)
+
+		if e != nil {
+			t.Fatal("%#v", e)
+		}
+
+		if rsp != nil {
+			t.Errorf("%#v", rsp)
+		}
+
+		c.session.transport.connection.Close()
+
+		go func() {
+			_, e := c.Create(ctx, "foo", []byte("bar"), nil, CreatePersistent, true)
+
+			if e != nil && e != context.Canceled {
+				t.Errorf("%v", e)
+			}
+		}()
+
+		ev := <-w.Event()
+
+		if ev.Type != WatcherEventNodeCreated {
+			t.Errorf("%#v", ev)
+		}
+
+		rsp, w, e = c.ExistsW(ctx, "foo", true)
+
+		if e != nil {
+			t.Fatal("%#v", e)
+		}
+
+		if rsp == nil {
+			t.Error()
+		}
+
+		c.session.transport.connection.Close()
+
+		go func() {
+			e := c.Delete(ctx, "foo", -1, true)
+
+			if e != nil && e != context.Canceled {
+				t.Errorf("%v", e)
+			}
+		}()
+
+		ev = <-w.Event()
 		cancel()
 	}()
 

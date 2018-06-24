@@ -75,7 +75,7 @@ func (self *Client) Run(context_ context.Context) error {
 		var value interface{}
 		value, e = self.serverAddresses.GetValue(context_)
 
-		if e == delay_pool.NoMoreValuesError {
+		if e != nil {
 			// TODO: add log
 			break
 		}

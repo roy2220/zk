@@ -214,7 +214,7 @@ func doDeserializeBuffer(lvalue reflect.Value, data []byte, dataOffset *int) err
 			return RecordDerecordSerializationError{fmt.Sprintf("dataSize=%#v, nextDataOffset=%#v", len(data), nextDataOffset)}
 		}
 
-		lvalue.SetBytes(data[*dataOffset:nextDataOffset])
+		lvalue.SetBytes(append([]byte(nil), data[*dataOffset:nextDataOffset]...))
 		*dataOffset = nextDataOffset
 	}
 

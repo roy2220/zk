@@ -112,4 +112,65 @@ func (self Error) Error() string {
 	return result
 }
 
+func (self Error) GoString() string {
+	switch self.code {
+	case ErrorSystem:
+		return "<ErrorSystem>"
+	case ErrorRuntimeInconsistency:
+		return "<ErrorRuntimeInconsistency>"
+	case ErrorDataInconsistency:
+		return "<ErrorDataInconsistency>"
+	case ErrorConnectionLoss:
+		return "<ErrorConnectionLoss>"
+	case ErrorMarshalling:
+		return "<ErrorMarshalling>"
+	case ErrorUnimplemented:
+		return "<ErrorUnimplemented>"
+	case ErrorOperationTimeout:
+		return "<ErrorOperationTimeout>"
+	case ErrorBadArguments:
+		return "<ErrorBadArguments>"
+	case ErrorUnknownSession:
+		return "<ErrorUnknownSession>"
+	case ErrorNewConfigNoQuorum:
+		return "<ErrorNewConfigNoQuorum>"
+	case ErrorReconfigInProgress:
+		return "<ErrorReconfigInProgress>"
+	case ErrorAPI:
+		return "<ErrorAPI>"
+	case ErrorNoNode:
+		return "<ErrorNoNode>"
+	case ErrorNoAuth:
+		return "<ErrorNoAuth>"
+	case ErrorBadVersion:
+		return "<ErrorBadVersion>"
+	case ErrorNoChildrenForEphemerals:
+		return "<ErrorNoChildrenForEphemerals>"
+	case ErrorNodeExists:
+		return "<ErrorNodeExists>"
+	case ErrorNotEmpty:
+		return "<ErrorNotEmpty>"
+	case ErrorSessionExpired:
+		return "<ErrorSessionExpired>"
+	case ErrorInvalidCallback:
+		return "<ErrorInvalidCallback>"
+	case ErrorInvalidACL:
+		return "<ErrorInvalidACL>"
+	case ErrorAuthFailed:
+		return "<ErrorAuthFailed>"
+	case ErrorSessionMoved:
+		return "<ErrorSessionMoved>"
+	case ErrorNotReadOnly:
+		return "<ErrorNotReadOnly>"
+	case ErrorEphemeralOnLocalSession:
+		return "<ErrorEphemeralOnLocalSession>"
+	case ErrorNoWatcher:
+		return "<ErrorNoWatcher>"
+	case ErrorReconfigDisabled:
+		return "<ErrorReconfigDisabled>"
+	default:
+		return fmt.Sprintf("<Error:%d>", self)
+	}
+}
+
 type ErrorCode int32
