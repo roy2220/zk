@@ -219,8 +219,8 @@ func (self *session) Initialize(policy *SessionPolicy) {
 	}
 }
 
-func (self *session) Close(context_ context.Context) {
-	self.setState(context_, SessionEventNo, SessionClosed)
+func (self *session) Close() {
+	self.setState(SessionEventNo, SessionClosed)
 }
 
 func (self *session) AddListener(maxNumberOfStateChanges int) (*SessionListener, error) {
@@ -280,7 +280,7 @@ func (self *session) Connect(context_ context.Context, serverAddress string, aut
 		eventType = SessionEventDisconnected
 	}
 
-	self.setState(context_, eventType, SessionConnecting)
+	self.setState(eventType, SessionConnecting)
 
 	if e := self.connectTransport(context_, serverAddress, func(transport_ *transport) error {
 		if e := self.doConnect(context_, transport_, func() error {
@@ -302,7 +302,7 @@ func (self *session) Connect(context_ context.Context, serverAddress string, aut
 		return e
 	}
 
-	self.setState(context_, SessionEventConnected, SessionConnected)
+	self.setState(SessionEventConnected, SessionConnected)
 	return nil
 }
 
@@ -386,7 +386,7 @@ func (self *session) GetTimeout() time.Duration {
 	return self.timeout
 }
 
-func (self *session) setState(context_ context.Context, eventType SessionEventType, newState SessionState) {
+func (self *session) setState(eventType SessionEventType, newState SessionState) {
 	oldState := self.getState()
 	errorCode := ErrorCode(0)
 
@@ -470,7 +470,7 @@ func (self *session) setState(context_ context.Context, eventType SessionEventTy
 			{
 				if !self.transport.IsClosed() {
 					if self.id != 0 {
-						self.doClose(context_, &self.transport)
+						self.doClose(&self.transport)
 					}
 
 					self.transport.Close()
@@ -584,13 +584,13 @@ func (self *session) doConnect(context_ context.Context, transport_ *transport, 
 	transport_.Skip(len(data))
 
 	if response.TimeOut < 1 {
-		self.setState(context_, SessionEventExpired, SessionClosed)
+		self.setState(SessionEventExpired, SessionClosed)
 		return Error{ErrorSessionExpired, ""}
 	}
 
 	if e := callback(); e != nil {
 		if self.id == 0 {
-			self.doClose(context_, transport_)
+			self.doClose(transport_)
 		}
 
 		return e
@@ -602,7 +602,7 @@ func (self *session) doConnect(context_ context.Context, transport_ *transport, 
 	return nil
 }
 
-func (self *session) doClose(context_ context.Context, transport_ *transport) error {
+func (self *session) doClose(transport_ *transport) error {
 	requestHeader_ := requestHeader{
 		Xid:  0,
 		Type: OpCloseSession,
@@ -615,7 +615,7 @@ func (self *session) doClose(context_ context.Context, transport_ *transport) er
 		return e
 	}
 
-	if e := transport_.Flush(context_, minSessionTimeout); e != nil {
+	if e := transport_.Flush(context.Background(), closeSessionTimeout); e != nil {
 		return e
 	}
 
@@ -641,7 +641,7 @@ func (self *session) authenticate(context_ context.Context, transport_ *transpor
 			reflect.TypeOf(struct{}{}),
 		); e != nil {
 			if e, ok := e.(Error); ok && e.GetCode() == ErrorAuthFailed {
-				self.setState(context_, SessionEventAuthFailed, SessionAuthFailed)
+				self.setState(SessionEventAuthFailed, SessionAuthFailed)
 			}
 
 			return e
@@ -1005,6 +1005,7 @@ const protocolVersion = 0
 const maxSetWatchesSize = 1 << 17
 const setWatchesOverheadSize = 28
 const stringOverheadSize = 4
+const closeSessionTimeout = 200 * time.Millisecond
 
 var watcherEventType2WatcherTypes = [...][]WatcherType{
 	WatcherEventNone:                nil,

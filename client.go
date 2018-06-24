@@ -118,7 +118,7 @@ func (self *Client) Run(context_ context.Context) error {
 	}
 
 	if !self.session.IsClosed() {
-		self.session.Close(context_)
+		self.session.Close()
 	}
 
 	self.serverAddresses.Collect()

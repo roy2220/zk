@@ -142,7 +142,14 @@ func (self *transport) Flush(context_ context.Context, timeout time.Duration) er
 		return e
 	}
 
+	buffers := self.buffers[0:0]
 	_, e = self.buffers.WriteTo(self.connection)
+	buffers = buffers[:cap(buffers)-cap(self.buffers)]
+
+	for i := range buffers {
+		buffers[i] = nil
+	}
+
 	return e
 }
 
