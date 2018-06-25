@@ -250,6 +250,29 @@ type ExistsResponse struct {
 	Stat Stat
 }
 
+type GetACLRequest struct {
+	Path string
+}
+
+type GetACLResponse struct {
+	ACL  []ACL
+	Stat Stat
+}
+
+type GetChildrenRequest struct {
+	Path  string
+	Watch bool
+}
+
+type GetChildrenResponse struct {
+	Children []string
+}
+
+type GetChildren2Response struct {
+	Children []string
+	Stat     Stat
+}
+
 type GetDataRequest struct {
 	Path  string
 	Watch bool
@@ -258,6 +281,34 @@ type GetDataRequest struct {
 type GetDataResponse struct {
 	Data []byte
 	Stat Stat
+}
+
+type SetACLRequest struct {
+	Path    string
+	ACL     []ACL
+	Version int32
+}
+
+type SetACLResponse struct {
+	Stat Stat
+}
+
+type SetDataRequest struct {
+	Path    string
+	Data    []byte
+	Version int32
+}
+
+type SetDataResponse struct {
+	Stat Stat
+}
+
+type SyncRequest struct {
+	Path string
+}
+
+type SyncResponse struct {
+	Path string
 }
 
 var AnyoneIdUnsafe = Id{"world", "anyone"}

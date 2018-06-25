@@ -615,7 +615,7 @@ func (self *session) doClose(transport_ *transport) error {
 		return e
 	}
 
-	if e := transport_.Flush(context.Background(), closeSessionTimeout); e != nil {
+	if e := transport_.Flush(context.Background(), sessionCloseTimeout); e != nil {
 		return e
 	}
 
@@ -924,6 +924,7 @@ func (self *session) receiveResponses(context_ context.Context) error {
 
 		if value, ok := self.pendingOperations.Load(replyHeader_.Xid); ok {
 			self.pendingOperations.Delete(replyHeader_.Xid)
+			self.dequeOfOperations.CommitNodeRemovals(1)
 			operation_ := value.(*operation)
 
 			if replyHeader_.Err == 0 {
@@ -1005,7 +1006,7 @@ const protocolVersion = 0
 const maxSetWatchesSize = 1 << 17
 const setWatchesOverheadSize = 28
 const stringOverheadSize = 4
-const closeSessionTimeout = 200 * time.Millisecond
+const sessionCloseTimeout = 200 * time.Millisecond
 
 var watcherEventType2WatcherTypes = [...][]WatcherType{
 	WatcherEventNone:                nil,

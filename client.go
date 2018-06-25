@@ -225,6 +225,153 @@ func (self *Client) ExistsW(context_ context.Context, path string, autoRetry boo
 	return self.doExists(context_, path, true, autoRetry)
 }
 
+func (self *Client) GetACL(context_ context.Context, path string, autoRetry bool) (*GetACLResponse, error) {
+	path = self.NormalizePath(path)
+
+	request := &GetACLRequest{
+		Path: path,
+	}
+
+	var response *GetACLResponse
+
+	callback := func(value interface{}, _ ErrorCode) {
+		response = value.(*GetACLResponse)
+	}
+
+	if e := self.executeOperation(
+		context_,
+		OpGetACL,
+		request,
+		reflect.TypeOf(GetACLResponse{}),
+		autoRetry,
+		0,
+		callback,
+	); e != nil {
+		return nil, e
+	}
+
+	return response, nil
+}
+
+func (self *Client) GetChildren(context_ context.Context, path string, autoRetry bool) (*GetChildrenResponse, error) {
+	response, _, e := self.doGetChildren(context_, path, false, autoRetry)
+	return response, e
+}
+
+func (self *Client) GetChildrenW(context_ context.Context, path string, autoRetry bool) (*GetChildrenResponse, *Watcher, error) {
+	return self.doGetChildren(context_, path, true, autoRetry)
+}
+
+func (self *Client) GetChildren2(context_ context.Context, path string, autoRetry bool) (*GetChildren2Response, error) {
+	response, _, e := self.doGetChildren2(context_, path, false, autoRetry)
+	return response, e
+}
+
+func (self *Client) GetChildren2W(context_ context.Context, path string, autoRetry bool) (*GetChildren2Response, *Watcher, error) {
+	return self.doGetChildren2(context_, path, true, autoRetry)
+}
+
+func (self *Client) GetData(context_ context.Context, path string, autoRetry bool) (*GetDataResponse, error) {
+	response, _, e := self.doGetData(context_, path, false, autoRetry)
+	return response, e
+}
+
+func (self *Client) GetDataW(context_ context.Context, path string, autoRetry bool) (*GetDataResponse, *Watcher, error) {
+	return self.doGetData(context_, path, true, autoRetry)
+}
+
+func (self *Client) SetACL(context_ context.Context, path string, acl []ACL, version int32, autoRetry bool) (*SetACLResponse, error) {
+	path = self.NormalizePath(path)
+
+	if acl == nil {
+		acl = self.defaultACL
+	}
+
+	request := &SetACLRequest{
+		Path:    path,
+		ACL:     acl,
+		Version: version,
+	}
+
+	var response *SetACLResponse
+
+	callback := func(value interface{}, _ ErrorCode) {
+		response = value.(*SetACLResponse)
+	}
+
+	if e := self.executeOperation(
+		context_,
+		OpSetACL,
+		request,
+		reflect.TypeOf(SetACLResponse{}),
+		autoRetry,
+		0,
+		callback,
+	); e != nil {
+		return nil, e
+	}
+
+	return response, nil
+}
+
+func (self *Client) SetData(context_ context.Context, path string, data []byte, version int32, autoRetry bool) (*SetDataResponse, error) {
+	path = self.NormalizePath(path)
+
+	request := &SetDataRequest{
+		Path:    path,
+		Data:    data,
+		Version: version,
+	}
+
+	var response *SetDataResponse
+
+	callback := func(value interface{}, _ ErrorCode) {
+		response = value.(*SetDataResponse)
+	}
+
+	if e := self.executeOperation(
+		context_,
+		OpSetData,
+		request,
+		reflect.TypeOf(SetDataResponse{}),
+		autoRetry,
+		0,
+		callback,
+	); e != nil {
+		return nil, e
+	}
+
+	return response, nil
+}
+
+func (self *Client) Sync(context_ context.Context, path string, autoRetry bool) (*SyncResponse, error) {
+	path = self.NormalizePath(path)
+
+	request := &SyncRequest{
+		Path: path,
+	}
+
+	var response *SyncResponse
+
+	callback := func(value interface{}, _ ErrorCode) {
+		response = value.(*SyncResponse)
+	}
+
+	if e := self.executeOperation(
+		context_,
+		OpSync,
+		request,
+		reflect.TypeOf(SyncResponse{}),
+		autoRetry,
+		0,
+		callback,
+	); e != nil {
+		return nil, e
+	}
+
+	return response, nil
+}
+
 func (self *Client) executeOperation(
 	context_ context.Context,
 	opCode OpCode,
@@ -307,6 +454,108 @@ func (self *Client) doExists(context_ context.Context, path string, watch bool, 
 		reflect.TypeOf(ExistsResponse{}),
 		autoRetry,
 		ErrorNoNode,
+		callback,
+	); e != nil {
+		return nil, nil, e
+	}
+
+	return response, watcher, nil
+}
+
+func (self *Client) doGetChildren(context_ context.Context, path string, watch bool, autoRetry bool) (*GetChildrenResponse, *Watcher, error) {
+	path = self.NormalizePath(path)
+
+	request := &GetChildrenRequest{
+		Path:  path,
+		Watch: watch,
+	}
+
+	var response *GetChildrenResponse
+	watcher := (*Watcher)(nil)
+
+	callback := func(value interface{}, _ ErrorCode) {
+		response = value.(*GetChildrenResponse)
+
+		if watch {
+			watcher = self.session.AddWatcher(WatcherChild, path)
+		}
+	}
+
+	if e := self.executeOperation(
+		context_,
+		OpGetChildren,
+		request,
+		reflect.TypeOf(GetChildrenResponse{}),
+		autoRetry,
+		0,
+		callback,
+	); e != nil {
+		return nil, nil, e
+	}
+
+	return response, watcher, nil
+}
+
+func (self *Client) doGetChildren2(context_ context.Context, path string, watch bool, autoRetry bool) (*GetChildren2Response, *Watcher, error) {
+	path = self.NormalizePath(path)
+
+	request := &GetChildrenRequest{
+		Path:  path,
+		Watch: watch,
+	}
+
+	var response *GetChildren2Response
+	watcher := (*Watcher)(nil)
+
+	callback := func(value interface{}, _ ErrorCode) {
+		response = value.(*GetChildren2Response)
+
+		if watch {
+			watcher = self.session.AddWatcher(WatcherChild, path)
+		}
+	}
+
+	if e := self.executeOperation(
+		context_,
+		OpGetChildren2,
+		request,
+		reflect.TypeOf(GetChildren2Response{}),
+		autoRetry,
+		0,
+		callback,
+	); e != nil {
+		return nil, nil, e
+	}
+
+	return response, watcher, nil
+}
+
+func (self *Client) doGetData(context_ context.Context, path string, watch bool, autoRetry bool) (*GetDataResponse, *Watcher, error) {
+	path = self.NormalizePath(path)
+
+	request := &GetDataRequest{
+		Path:  path,
+		Watch: watch,
+	}
+
+	var response *GetDataResponse
+	watcher := (*Watcher)(nil)
+
+	callback := func(value interface{}, _ ErrorCode) {
+		response = value.(*GetDataResponse)
+
+		if watch {
+			watcher = self.session.AddWatcher(WatcherData, path)
+		}
+	}
+
+	if e := self.executeOperation(
+		context_,
+		OpGetData,
+		request,
+		reflect.TypeOf(GetDataResponse{}),
+		autoRetry,
+		0,
 		callback,
 	); e != nil {
 		return nil, nil, e

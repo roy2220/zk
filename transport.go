@@ -13,17 +13,17 @@ import (
 )
 
 type TransportPolicy struct {
-	MinReadBufferSize    int32
-	MaxPacketPayloadSize int32
-	validateOnce         sync.Once
+	InitialReadBufferSize int32
+	MaxPacketPayloadSize  int32
+	validateOnce          sync.Once
 }
 
 func (self *TransportPolicy) Validate() {
 	self.validateOnce.Do(func() {
-		if self.MinReadBufferSize < minMinTransportReadBufferSize {
-			self.MinReadBufferSize = minMinTransportReadBufferSize
-		} else if self.MinReadBufferSize > maxMinTransportReadBufferSize {
-			self.MinReadBufferSize = maxMinTransportReadBufferSize
+		if self.InitialReadBufferSize < minInitialTransportReadBufferSize {
+			self.InitialReadBufferSize = minInitialTransportReadBufferSize
+		} else if self.InitialReadBufferSize > maxInitialTransportReadBufferSize {
+			self.InitialReadBufferSize = maxInitialTransportReadBufferSize
 		}
 
 		if self.MaxPacketPayloadSize < minMaxPacketPayloadSize {
@@ -184,6 +184,10 @@ func (self *transport) Peek(context_ context.Context, timeout time.Duration) ([]
 			self.byteStream.CommitBuffer(dataSize)
 
 			if self.byteStream.GetDataSize() >= packetHeaderSize {
+				if bufferSize := self.byteStream.GetBufferSize(); bufferSize == 0 {
+					self.byteStream.ReserveBuffer(1)
+				}
+
 				break
 			}
 		}
@@ -225,6 +229,10 @@ func (self *transport) Peek(context_ context.Context, timeout time.Duration) ([]
 			self.byteStream.CommitBuffer(dataSize)
 
 			if self.byteStream.GetDataSize() >= packetSize {
+				if bufferSize := self.byteStream.GetBufferSize(); bufferSize == 0 {
+					self.byteStream.ReserveBuffer(1)
+				}
+
 				break
 			}
 		}
@@ -251,12 +259,12 @@ func (self *transport) initialize(policy *TransportPolicy, connection *net.TCPCo
 	policy.Validate()
 	self.policy = policy
 	self.connection = connection
-	self.byteStream.ReserveBuffer(int(policy.MinReadBufferSize))
+	self.byteStream.ReserveBuffer(int(policy.InitialReadBufferSize))
 	self.openness = 1
 }
 
-const minMinTransportReadBufferSize = 1 << 4
-const maxMinTransportReadBufferSize = 1 << 16
+const minInitialTransportReadBufferSize = 1 << 4
+const maxInitialTransportReadBufferSize = 1 << 16
 const minMaxPacketPayloadSize = (1 << 20) - 1
 const packetHeaderSize = 4
 
