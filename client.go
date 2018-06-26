@@ -84,7 +84,6 @@ func (self *Client) Run(context_ context.Context) error {
 		value, e = self.serverAddresses.GetValue(context_)
 
 		if e != nil {
-			// TODO: add log
 			break
 		}
 

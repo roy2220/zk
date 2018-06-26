@@ -14,6 +14,7 @@ import (
 
 	"github.com/let-z-go/intrusive_containers/list"
 	"github.com/let-z-go/toolkit/deque"
+	"github.com/let-z-go/toolkit/logger"
 	"github.com/let-z-go/toolkit/semaphore"
 )
 
@@ -41,6 +42,7 @@ const (
 )
 
 type SessionPolicy struct {
+	Logger                       logger.Logger
 	Timeout                      time.Duration
 	MaxNumberOfPendingOperations int32
 	Transport                    TransportPolicy
@@ -272,6 +274,7 @@ func (self *session) RemoveListener(listener *SessionListener) error {
 }
 
 func (self *session) Connect(context_ context.Context, serverAddress string, authInfos []AuthInfo) error {
+	self.policy.Logger.Infof("session connection: id=%#x, serverAddress=%#v", self.id, serverAddress)
 	var eventType SessionEventType
 
 	if self.getState() == SessionNotConnected {
@@ -428,7 +431,7 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 	}
 
 	atomic.StoreInt32(&self.state, int32(newState))
-	// TODO: add log
+	self.policy.Logger.Infof("session state change: id=%#x, eventType=%#v, oldState=%#v, newState=%#v", self.id, eventType, oldState, newState)
 	self.lockOfListeners.Lock()
 
 	for listener := range self.listeners {
@@ -772,7 +775,7 @@ func (self *session) executeOperation(
 				self.fireWatcherEvent(watcherEvent_.Type, watcherEvent_.Path)
 			case -2: // -2 is the xid for pings
 			default:
-				// TODO: add log
+				self.policy.Logger.Warningf("ignored reply: id=%#x, replyHeader=%#v", self.id, replyHeader_)
 			}
 
 			transport_.Skip(len(data))
@@ -797,13 +800,13 @@ func (self *session) executeOperation(
 func (self *session) fireWatcherEvent(watcherEventType WatcherEventType, path string) {
 	watcherEvent := WatcherEvent{watcherEventType, nil}
 	watcherTypes := watcherEventType2WatcherTypes[watcherEventType]
+	watcherCount := 0
 
 	for _, watcherType := range watcherTypes {
 		path2Watchers := self.watchers[watcherType]
-		watchers := path2Watchers[path]
+		watchers, ok := path2Watchers[path]
 
-		if watchers == nil {
-			// TODO: add log
+		if !ok {
 			continue
 		}
 
@@ -812,6 +815,12 @@ func (self *session) fireWatcherEvent(watcherEventType WatcherEventType, path st
 		for watcher := range watchers {
 			watcher.fireEvent(watcherEvent)
 		}
+
+		watcherCount += len(watchers)
+	}
+
+	if watcherCount == 0 {
+		self.policy.Logger.Warningf("missing watchers: id=%#x, watcherEventType=%#v, path=%#v", self.id, watcherEventType, path)
 	}
 }
 
@@ -950,7 +959,7 @@ func (self *session) receiveResponses(context_ context.Context) error {
 				self.fireWatcherEvent(watcherEvent_.Type, watcherEvent_.Path)
 			case -2: // -2 is the xid for pings
 			default:
-				// TODO: add log
+				self.policy.Logger.Warningf("ignored reply: id=%#x, replyHeader=%#v", self.id, replyHeader_)
 			}
 		}
 

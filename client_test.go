@@ -3,17 +3,21 @@ package zk
 import (
 	"bytes"
 	"context"
+	"os"
 	"testing"
 	"time"
 	/*
 		"fmt"
 		"sync"
-	*/)
+	*/
+
+	"github.com/let-z-go/toolkit/logger"
+)
 
 func TestClient1(t *testing.T) {
 	{
 		var c Client
-		c.Initialize(&SessionPolicy{}, serverAddresses, nil, nil, "/")
+		c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
@@ -24,7 +28,7 @@ func TestClient1(t *testing.T) {
 
 	{
 		var c Client
-		c.Initialize(&SessionPolicy{}, serverAddresses, nil, nil, "/")
+		c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
 		ctx, cancel := context.WithCancel(context.Background())
 
 		go func() {
@@ -41,7 +45,7 @@ func TestClient1(t *testing.T) {
 func TestClient2(t *testing.T) {
 	{
 		var c Client
-		c.Initialize(&SessionPolicy{}, serverAddresses, nil, nil, "/")
+		c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
 		ctx, cancel := context.WithTimeout(context.Background(), 0)
 
 		if e := c.Run(ctx); e != context.DeadlineExceeded {
@@ -53,7 +57,7 @@ func TestClient2(t *testing.T) {
 
 	{
 		var c Client
-		c.Initialize(&SessionPolicy{}, serverAddresses, nil, nil, "/")
+		c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second/2)
 
 		if e := c.Run(ctx); e != context.DeadlineExceeded {
@@ -66,7 +70,7 @@ func TestClient2(t *testing.T) {
 
 func TestClientCreateAndDelete(t *testing.T) {
 	var c Client
-	c.Initialize(&SessionPolicy{}, serverAddresses, nil, nil, "/")
+	c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -100,14 +104,14 @@ func TestClientCreateAndDelete(t *testing.T) {
 
 func TestClientExists(t *testing.T) {
 	var c Client
-	c.Initialize(&SessionPolicy{}, serverAddresses, nil, nil, "/")
+	c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
 		rsp, w, e := c.ExistsW(ctx, "foo", true)
 
 		if e != nil {
-			t.Fatal("%v", e)
+			t.Fatalf("%v", e)
 		}
 
 		if rsp != nil {
@@ -133,7 +137,7 @@ func TestClientExists(t *testing.T) {
 		rsp, w, e = c.ExistsW(ctx, "foo", true)
 
 		if e != nil {
-			t.Fatal("%v", e)
+			t.Fatalf("%v", e)
 		}
 
 		if rsp == nil {
@@ -166,7 +170,7 @@ func TestClientExists(t *testing.T) {
 
 func TestClientGetSetACL(t *testing.T) {
 	var c Client
-	c.Initialize(&SessionPolicy{}, serverAddresses,
+	c.Initialize(sessionPolicy, serverAddresses,
 		[]AuthInfo{AuthInfo{"digest", []byte("test:123")}}, []ACL{CreatorAllACL}, "/")
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -234,7 +238,7 @@ func TestClientGetSetACL(t *testing.T) {
 
 func TestClientGetChildren(t *testing.T) {
 	var c Client
-	c.Initialize(&SessionPolicy{}, serverAddresses, nil, nil, "/")
+	c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -247,7 +251,7 @@ func TestClientGetChildren(t *testing.T) {
 		rsp, w, e := c.GetChildrenW(ctx, "foo", true)
 
 		if e != nil {
-			t.Fatal("%v", e)
+			t.Fatalf("%v", e)
 		}
 
 		if len(rsp.Children) != 0 {
@@ -273,7 +277,7 @@ func TestClientGetChildren(t *testing.T) {
 		rsp2, w, e := c.GetChildren2W(ctx, "foo", true)
 
 		if e != nil {
-			t.Fatal("%v", e)
+			t.Fatalf("%v", e)
 		}
 
 		if !(len(rsp2.Children) == 1 && rsp2.Children[0] == "son") {
@@ -307,7 +311,7 @@ func TestClientGetChildren(t *testing.T) {
 
 func TestClientGetSetData(t *testing.T) {
 	var c Client
-	c.Initialize(&SessionPolicy{}, serverAddresses, nil, nil, "/")
+	c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -320,7 +324,7 @@ func TestClientGetSetData(t *testing.T) {
 		rsp, w, e := c.GetDataW(ctx, "foo", true)
 
 		if e != nil {
-			t.Fatal("%v", e)
+			t.Fatalf("%v", e)
 		}
 
 		if !bytes.Equal(rsp.Data, []byte("bar")) {
@@ -346,7 +350,7 @@ func TestClientGetSetData(t *testing.T) {
 		rsp, w, e = c.GetDataW(ctx, "foo", true)
 
 		if e != nil {
-			t.Fatal("%v", e)
+			t.Fatalf("%v", e)
 		}
 
 		if !bytes.Equal(rsp.Data, []byte("bar2")) {
@@ -379,7 +383,7 @@ func TestClientGetSetData(t *testing.T) {
 
 func TestClientSync(t *testing.T) {
 	var c Client
-	c.Initialize(&SessionPolicy{}, serverAddresses, nil, nil, "/")
+	c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -403,7 +407,7 @@ func TestClientSync(t *testing.T) {
 
 func TestClientMulti(t *testing.T) {
 	var c Client
-	c.Initialize(&SessionPolicy{}, serverAddresses, nil, nil, "/")
+	c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -469,4 +473,10 @@ func TestClientPerformance(t *testing.T) {
 }
 */
 
+var sessionPolicy *SessionPolicy
 var serverAddresses = []string{"192.168.33.1:2181", "192.168.33.1:2182", "192.168.33.1:2183"}
+
+func init() {
+	sessionPolicy = &SessionPolicy{}
+	sessionPolicy.Logger.Initialize("zktest", logger.SeverityInfo, os.Stdout, os.Stderr)
+}

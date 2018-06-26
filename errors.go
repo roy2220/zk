@@ -169,7 +169,7 @@ func (self Error) GoString() string {
 	case ErrorReconfigDisabled:
 		return "<ErrorReconfigDisabled>"
 	default:
-		return fmt.Sprintf("<Error:%d>", self)
+		return fmt.Sprintf("<Error:%d>", self.code)
 	}
 }
 
