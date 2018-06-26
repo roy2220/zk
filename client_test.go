@@ -401,6 +401,41 @@ func TestClientSync(t *testing.T) {
 	}
 }
 
+func TestClientMulti(t *testing.T) {
+	var c Client
+	c.Initialize(&SessionPolicy{}, serverAddresses, nil, nil, "/")
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		ops := []Op{
+			c.CreateOp("foo", []byte("bar"), nil, CreatePersistent),
+			c.SetDataOp("foo", []byte("bar2"), -1),
+			c.CheckOp("foo", -1),
+			c.DeleteOp("foo", -1),
+		}
+
+		rsp, e := c.Multi(ctx, ops, true)
+
+		if e != nil {
+			t.Errorf("%v", e)
+		}
+
+		for i := range rsp.OpResults {
+			r := &rsp.OpResults[i]
+
+			if r.Type == OpError {
+				t.Errorf("%#v", r)
+			}
+		}
+
+		cancel()
+	}()
+
+	if e := c.Run(ctx); e != context.Canceled {
+		t.Errorf("%v", e)
+	}
+}
+
 /*
 func TestClientPerformance(t *testing.T) {
 	fmt.Println("---------------------------------------------")

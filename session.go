@@ -64,14 +64,14 @@ func (self *SessionPolicy) Validate() {
 }
 
 type SessionListener struct {
-	stateChanges chan StateChange
+	stateChanges chan SessionStateChange
 }
 
-func (self *SessionListener) StateChanges() <-chan StateChange {
+func (self *SessionListener) StateChanges() <-chan SessionStateChange {
 	return self.stateChanges
 }
 
-type StateChange struct {
+type SessionStateChange struct {
 	EventType SessionEventType
 	State     SessionState
 }
@@ -229,7 +229,7 @@ func (self *session) AddListener(maxNumberOfStateChanges int) (*SessionListener,
 	}
 
 	listener := &SessionListener{
-		stateChanges: make(chan StateChange, maxNumberOfStateChanges),
+		stateChanges: make(chan SessionStateChange, maxNumberOfStateChanges),
 	}
 
 	self.lockOfListeners.Lock()
@@ -432,7 +432,7 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 	self.lockOfListeners.Lock()
 
 	for listener := range self.listeners {
-		listener.stateChanges <- StateChange{eventType, newState}
+		listener.stateChanges <- SessionStateChange{eventType, newState}
 	}
 
 	self.lockOfListeners.Unlock()
@@ -626,7 +626,7 @@ func (self *session) authenticate(context_ context.Context, transport_ *transpor
 	for i := range authInfos {
 		authInfo := &authInfos[i]
 
-		request := AuthPacket{
+		request := authPacket{
 			Type:   0,
 			Scheme: authInfo.Scheme,
 			Auth:   authInfo.Auth,

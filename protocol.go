@@ -219,12 +219,6 @@ type Stat struct {
 	PZxid          int64
 }
 
-type AuthPacket struct {
-	Type   int32
-	Scheme string
-	Auth   []byte
-}
-
 type CreateRequest struct {
 	Path  string
 	Data  []byte
@@ -311,6 +305,96 @@ type SyncResponse struct {
 	Path string
 }
 
+type CheckVersionRequest struct {
+	Path    string
+	Version int32
+}
+
+type ErrorResponse struct {
+	Err int32
+}
+
+type Op struct {
+	Type    OpCode
+	Request interface{}
+}
+
+type OpResult struct {
+	Type     OpCode
+	Response interface{}
+}
+
+type MultiRequest struct {
+	Ops []Op
+}
+
+func (self MultiRequest) Serialize(buffer *[]byte) {
+	for i := range self.Ops {
+		op := &self.Ops[i]
+
+		header := multiHeader{
+			Type: op.Type,
+			Done: false,
+			Err:  -1,
+		}
+
+		serializeRecord(&header, buffer)
+		serializeRecord(op.Request, buffer)
+	}
+
+	header := multiHeader{
+		Type: -1,
+		Done: true,
+		Err:  -1,
+	}
+
+	serializeRecord(&header, buffer)
+}
+
+type MultiResponse struct {
+	OpResults []OpResult
+}
+
+func (self *MultiResponse) Deserialize(data []byte, dataOffset *int) error {
+	var header multiHeader
+
+	for {
+		if e := deserializeRecord(&header, data, dataOffset); e != nil {
+			return e
+		}
+
+		if header.Done {
+			return nil
+		}
+
+		var response interface{}
+
+		switch header.Type {
+		case OpCreate:
+			response = &CreateResponse{}
+		case OpDelete:
+			response = &struct{}{}
+		case OpSetData:
+			response = &SetDataResponse{}
+		case OpCheck:
+			response = &struct{}{}
+		case OpError:
+			response = &ErrorResponse{}
+		default:
+			return RecordDeserializationError{fmt.Sprintf("headerType=%#v", header.Type)}
+		}
+
+		if e := deserializeRecord(response, data, dataOffset); e != nil {
+			return e
+		}
+
+		self.OpResults = append(self.OpResults, OpResult{
+			Type:     header.Type,
+			Response: response,
+		})
+	}
+}
+
 var AnyoneIdUnsafe = Id{"world", "anyone"}
 var AuthIds = Id{"auth", ""}
 var OpenACLUnsafe = ACL{PermsAll, AnyoneIdUnsafe}
@@ -343,10 +427,10 @@ type replyHeader struct {
 	Err  ErrorCode
 }
 
-type watcherEvent struct {
-	Type  WatcherEventType
-	State int32
-	Path  string
+type authPacket struct {
+	Type   int32
+	Scheme string
+	Auth   []byte
 }
 
 type setWatches struct {
@@ -354,4 +438,16 @@ type setWatches struct {
 	DataWatches  []string
 	ExistWatches []string
 	ChildWatches []string
+}
+
+type watcherEvent struct {
+	Type  WatcherEventType
+	State int32
+	Path  string
+}
+
+type multiHeader struct {
+	Type OpCode
+	Done bool
+	Err  ErrorCode
 }

@@ -7,11 +7,11 @@ import (
 	"reflect"
 )
 
-type RecordDerecordSerializationError struct {
+type RecordDeserializationError struct {
 	context string
 }
 
-func (self RecordDerecordSerializationError) Error() string {
+func (self RecordDeserializationError) Error() string {
 	result := "zk: record deserialization"
 
 	if self.context != "" {
@@ -19,6 +19,14 @@ func (self RecordDerecordSerializationError) Error() string {
 	}
 
 	return result
+}
+
+type serializer interface {
+	Serialize(*[]byte)
+}
+
+type deserializer interface {
+	Deserialize([]byte, *int) error
 }
 
 func serializeRecord(record interface{}, buffer *[]byte) {
@@ -43,17 +51,17 @@ func deserializeRecord(record interface{}, data []byte, dataOffset *int) error {
 	lvalue := reflect.ValueOf(record)
 
 	if lvalue.Kind() != reflect.Ptr {
-		panic(RecordDerecordSerializationError{fmt.Sprintf("recordType=%T", record)})
+		panic(RecordDeserializationError{fmt.Sprintf("recordType=%T", record)})
 	}
 
 	if lvalue.IsNil() {
-		panic(RecordDerecordSerializationError{"record=<nil>"})
+		panic(RecordDeserializationError{"record=<nil>"})
 	}
 
 	lvalue = lvalue.Elem()
 
 	if lvalue.Kind() != reflect.Struct {
-		panic(RecordDerecordSerializationError{fmt.Sprintf("recordType=%T", record)})
+		panic(RecordDeserializationError{fmt.Sprintf("recordType=%T", record)})
 	}
 
 	return doDeserializeRecord(lvalue, data, dataOffset)
@@ -80,7 +88,6 @@ func doSerializeValue(rvalue reflect.Value, buffer *[]byte) {
 	default:
 		panic(recordSerializationError{fmt.Sprintf("valueType=%v", rvalue.Type())})
 	}
-
 }
 
 func doDeserializeValue(lvalue reflect.Value, data []byte, dataOffset *int) error {
@@ -102,7 +109,7 @@ func doDeserializeValue(lvalue reflect.Value, data []byte, dataOffset *int) erro
 	case reflect.Struct:
 		return doDeserializeRecord(lvalue, data, dataOffset)
 	default:
-		panic(RecordDerecordSerializationError{fmt.Sprintf("valueType=%v", lvalue.Type())})
+		panic(RecordDeserializationError{fmt.Sprintf("valueType=%v", lvalue.Type())})
 	}
 }
 
@@ -122,7 +129,7 @@ func doDeserializeBoolean(lvalue reflect.Value, data []byte, dataOffset *int) er
 	nextDataOffset := *dataOffset + 1
 
 	if nextDataOffset > len(data) {
-		return RecordDerecordSerializationError{fmt.Sprintf("dataSize=%#v, nextDataOffset=%#v", len(data), nextDataOffset)}
+		return RecordDeserializationError{fmt.Sprintf("dataSize=%#v, nextDataOffset=%#v", len(data), nextDataOffset)}
 	}
 
 	lvalue.SetBool(data[*dataOffset] != 0)
@@ -140,7 +147,7 @@ func doDeserializeInt(lvalue reflect.Value, data []byte, dataOffset *int) error 
 	nextDataOffset := *dataOffset + 4
 
 	if nextDataOffset > len(data) {
-		return RecordDerecordSerializationError{fmt.Sprintf("dataSize=%#v, nextDataOffset=%#v", len(data), nextDataOffset)}
+		return RecordDeserializationError{fmt.Sprintf("dataSize=%#v, nextDataOffset=%#v", len(data), nextDataOffset)}
 	}
 
 	lvalue.SetInt(int64(binary.BigEndian.Uint32(data[*dataOffset:nextDataOffset])))
@@ -158,7 +165,7 @@ func doDeserializeLong(lvalue reflect.Value, data []byte, dataOffset *int) error
 	nextDataOffset := *dataOffset + 8
 
 	if nextDataOffset > len(data) {
-		return RecordDerecordSerializationError{fmt.Sprintf("dataSize=%#v, nextDataOffset=%#v", len(data), nextDataOffset)}
+		return RecordDeserializationError{fmt.Sprintf("dataSize=%#v, nextDataOffset=%#v", len(data), nextDataOffset)}
 	}
 
 	lvalue.SetInt(int64(binary.BigEndian.Uint64(data[*dataOffset:nextDataOffset])))
@@ -180,7 +187,7 @@ func deserializeLen(data []byte, dataOffset *int) (int, error) {
 	nextDataOffset := *dataOffset + 4
 
 	if nextDataOffset > len(data) {
-		return 0, RecordDerecordSerializationError{fmt.Sprintf("dataSize=%#v, nextDataOffset=%#v", len(data), nextDataOffset)}
+		return 0, RecordDeserializationError{fmt.Sprintf("dataSize=%#v, nextDataOffset=%#v", len(data), nextDataOffset)}
 	}
 
 	l := int(int32(binary.BigEndian.Uint32(data[*dataOffset:nextDataOffset])))
@@ -211,7 +218,7 @@ func doDeserializeBuffer(lvalue reflect.Value, data []byte, dataOffset *int) err
 		nextDataOffset := *dataOffset + numberOfBytes
 
 		if nextDataOffset > len(data) {
-			return RecordDerecordSerializationError{fmt.Sprintf("dataSize=%#v, nextDataOffset=%#v", len(data), nextDataOffset)}
+			return RecordDeserializationError{fmt.Sprintf("dataSize=%#v, nextDataOffset=%#v", len(data), nextDataOffset)}
 		}
 
 		lvalue.SetBytes(append([]byte(nil), data[*dataOffset:nextDataOffset]...))
@@ -235,13 +242,13 @@ func doDeserializeString(lvalue reflect.Value, data []byte, dataOffset *int) err
 	}
 
 	if numberOfBytes < 0 {
-		return RecordDerecordSerializationError{"null string"}
+		return RecordDeserializationError{"string=<nil>"}
 	}
 
 	nextDataOffset := *dataOffset + numberOfBytes
 
 	if nextDataOffset > len(data) {
-		return RecordDerecordSerializationError{fmt.Sprintf("dataSize=%#v, nextDataOffset=%#v", len(data), nextDataOffset)}
+		return RecordDeserializationError{fmt.Sprintf("dataSize=%#v, nextDataOffset=%#v", len(data), nextDataOffset)}
 	}
 
 	lvalue.SetString(string(data[*dataOffset:nextDataOffset]))
@@ -285,6 +292,18 @@ func doDeserializeVector(lvalue reflect.Value, data []byte, dataOffset *int) err
 }
 
 func doSerializeRecord(rvalue reflect.Value, buffer *[]byte) {
+	if rvalue.CanAddr() {
+		if serializer_, ok := rvalue.Addr().Interface().(serializer); ok {
+			serializer_.Serialize(buffer)
+			return
+		}
+	} else {
+		if serializer_, ok := rvalue.Interface().(serializer); ok {
+			serializer_.Serialize(buffer)
+			return
+		}
+	}
+
 	numberOfFields := rvalue.NumField()
 
 	for i := 0; i < numberOfFields; i++ {
@@ -293,6 +312,10 @@ func doSerializeRecord(rvalue reflect.Value, buffer *[]byte) {
 }
 
 func doDeserializeRecord(lvalue reflect.Value, data []byte, dataOffset *int) error {
+	if deserializer_, ok := lvalue.Addr().Interface().(deserializer); ok {
+		return deserializer_.Deserialize(data, dataOffset)
+	}
+
 	numberOfFields := lvalue.NumField()
 
 	for i := 0; i < numberOfFields; i++ {

@@ -64,6 +64,14 @@ func (self *Client) Initialize(
 	}
 }
 
+func (self *Client) AddSessionListener(maxNumberOfSessionStateChanges int) (*SessionListener, error) {
+	return self.session.AddListener(maxNumberOfSessionStateChanges)
+}
+
+func (self *Client) RemoveSessionListener(sessionListener *SessionListener) error {
+	return self.session.RemoveListener(sessionListener)
+}
+
 func (self *Client) Run(context_ context.Context) error {
 	if self.session.IsClosed() {
 		return nil
@@ -362,6 +370,83 @@ func (self *Client) Sync(context_ context.Context, path string, autoRetry bool) 
 		OpSync,
 		request,
 		reflect.TypeOf(SyncResponse{}),
+		autoRetry,
+		0,
+		callback,
+	); e != nil {
+		return nil, e
+	}
+
+	return response, nil
+}
+
+func (self *Client) CreateOp(path string, data []byte, acl []ACL, createMode CreateMode) Op {
+	path = self.NormalizePath(path)
+
+	if acl == nil {
+		acl = self.defaultACL
+	}
+
+	request := &CreateRequest{
+		Path:  path,
+		Data:  data,
+		ACL:   acl,
+		Flags: createMode,
+	}
+
+	return Op{OpCreate, request}
+}
+
+func (self *Client) DeleteOp(path string, version int32) Op {
+	path = self.NormalizePath(path)
+
+	request := &DeleteRequest{
+		Path:    path,
+		Version: version,
+	}
+
+	return Op{OpDelete, request}
+}
+
+func (self *Client) SetDataOp(path string, data []byte, version int32) Op {
+	path = self.NormalizePath(path)
+
+	request := &SetDataRequest{
+		Path:    path,
+		Data:    data,
+		Version: version,
+	}
+
+	return Op{OpSetData, request}
+}
+
+func (self *Client) CheckOp(path string, version int32) Op {
+	path = self.NormalizePath(path)
+
+	request := &CheckVersionRequest{
+		Path:    path,
+		Version: version,
+	}
+
+	return Op{OpCheck, request}
+}
+
+func (self *Client) Multi(context_ context.Context, ops []Op, autoRetry bool) (*MultiResponse, error) {
+	request := &MultiRequest{
+		Ops: ops,
+	}
+
+	var response *MultiResponse
+
+	callback := func(value interface{}, _ ErrorCode) {
+		response = value.(*MultiResponse)
+	}
+
+	if e := self.executeOperation(
+		context_,
+		OpMulti,
+		request,
+		reflect.TypeOf(MultiResponse{}),
 		autoRetry,
 		0,
 		callback,

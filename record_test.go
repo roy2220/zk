@@ -143,7 +143,7 @@ func TestDeserializeRecord(t *testing.T) {
 		}
 
 		switch r.(type) {
-		case RecordDerecordSerializationError:
+		case RecordDeserializationError:
 		default:
 			t.Errorf("%#v", r)
 			debug.PrintStack()
@@ -164,4 +164,42 @@ func TestDeserializeRecord(t *testing.T) {
 	}
 
 	deserializeRecord(outFoo, data, &dataOffset)
+}
+
+var fooXS = false
+var fooXD = false
+
+type fooX struct {
+	D bool
+}
+
+func (f fooX) Serialize(*[]byte) {
+	fooXS = true
+	return
+}
+
+func (f *fooX) Deserialize([]byte, *int) error {
+	fooXD = true
+	return nil
+}
+
+func TestSerializeAnddeserializeRecord3(t *testing.T) {
+	buffer := []byte(nil)
+	var fx fooX
+	serializeRecord(&fx, &buffer)
+
+	if !fooXS {
+		t.Error()
+	}
+
+	dataOffset := 0
+	e := deserializeRecord(&fx, buffer, &dataOffset)
+
+	if e != nil {
+		t.Fatalf("%v", e)
+	}
+
+	if !fooXD {
+		t.Error()
+	}
 }
