@@ -4,12 +4,9 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"sync"
 	"testing"
 	"time"
-	/*
-		"fmt"
-		"sync"
-	*/
 
 	"github.com/let-z-go/toolkit/logger"
 )
@@ -440,38 +437,46 @@ func TestClientMulti(t *testing.T) {
 	}
 }
 
-/*
-func TestClientPerformance(t *testing.T) {
-	fmt.Println("---------------------------------------------")
-	var c Client
-	c.Initialize(&SessionPolicy{
+func BenchmarkClient(b *testing.B) {
+	sp := &SessionPolicy{
 		MaxNumberOfPendingOperations: 65536,
-	}, serverAddresses, nil, nil, "/")
+	}
+
+	sp.Logger.Initialize("zktest", logger.SeverityInfo, os.Stdout, os.Stderr)
+	var c Client
+	c.Initialize(sp, serverAddresses, nil, nil, "/")
+
 	ctx, cancel := context.WithCancel(context.Background())
+
 	go func() {
 		wg := sync.WaitGroup{}
 
-		bt := time.Now()
 		for i := 0; i < 1000; i++ {
 			wg.Add(1)
-			go func(i int) {
+
+			go func(j int) {
 				for i := 0; i < 100; i++ {
-					c.Exists(ctx, "foo", true)
+					switch (i + j) % 3 {
+					case 0:
+						c.GetData(ctx, "/", true)
+					case 1:
+						c.Exists(ctx, "/", true)
+					case 2:
+						c.GetChildren(ctx, "/", true)
+					}
 				}
-				// fmt.Println(i)
 				wg.Done()
 			}(i)
 		}
+
 		wg.Wait()
-		et := time.Now()
-		fmt.Printf("%v\n", et.Sub(bt))
 		cancel()
 	}()
+
 	if e := c.Run(ctx); e != context.Canceled {
-		t.Errorf("%v", e)
+		b.Errorf("%v", e)
 	}
 }
-*/
 
 var sessionPolicy *SessionPolicy
 var serverAddresses = []string{"192.168.33.1:2181", "192.168.33.1:2182", "192.168.33.1:2183"}

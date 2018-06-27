@@ -511,7 +511,7 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 		} else {
 			var list_ list.List
 			list_.Initialize()
-			operationCount := int32(0)
+			retriedOperationCount := int32(0)
 
 			self.pendingOperations.Range(func(key interface{}, value interface{}) bool {
 				self.pendingOperations.Delete(key)
@@ -519,7 +519,7 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 
 				if operationsAreRetriable && operation_.autoRetry {
 					list_.AppendNode(&operation_.listNode)
-					operationCount++
+					retriedOperationCount++
 				} else {
 					operation_.callback(nil, errorCode)
 				}
@@ -527,9 +527,7 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 				return true
 			})
 
-			if operationCount >= 1 {
-				self.dequeOfOperations.DiscardNodeRemovals(&list_, operationCount)
-			}
+			self.dequeOfOperations.DiscardNodeRemovals(&list_, retriedOperationCount)
 		}
 	}
 }
@@ -584,7 +582,7 @@ func (self *session) doConnect(context_ context.Context, transport_ *transport, 
 		return e
 	}
 
-	transport_.Skip(len(data))
+	transport_.Skip(data)
 
 	if response.TimeOut < 1 {
 		self.setState(SessionEventExpired, SessionClosed)
@@ -778,7 +776,7 @@ func (self *session) executeOperation(
 				self.policy.Logger.Warningf("ignored reply: id=%#x, replyHeader=%#v", self.id, replyHeader_)
 			}
 
-			transport_.Skip(len(data))
+			transport_.Skip(data)
 			continue
 		}
 
@@ -792,7 +790,7 @@ func (self *session) executeOperation(
 			return nil, e
 		}
 
-		transport_.Skip(len(data))
+		transport_.Skip(data)
 		return response, nil
 	}
 }
@@ -895,13 +893,15 @@ func (self *session) sendRequests(context_ context.Context) error {
 }
 
 func (self *session) receiveResponses(context_ context.Context) error {
+	var replyHeader_ replyHeader
+
 	for {
 		timeoutCount := 0
-		var data []byte
+		var data [][]byte
 
 		for {
 			var e error
-			data, e = self.transport.Peek(context_, self.getMinPingInterval())
+			data, e = self.transport.PeekAll(context_, self.getMinPingInterval())
 
 			if e != nil {
 				if e, ok := e.(net.Error); ok && e.Timeout() {
@@ -920,50 +920,62 @@ func (self *session) receiveResponses(context_ context.Context) error {
 			break
 		}
 
-		var replyHeader_ replyHeader
-		dataOffset := 0
+		completedOperationCount := int32(0)
 
-		if e := deserializeRecord(&replyHeader_, data, &dataOffset); e != nil {
-			return e
-		}
+		for _, data2 := range data {
+			dataOffset := 0
 
-		if replyHeader_.Zxid >= 1 {
-			self.lastZxid = replyHeader_.Zxid
-		}
+			if e := deserializeRecord(&replyHeader_, data2, &dataOffset); e != nil {
+				return e
+			}
 
-		if value, ok := self.pendingOperations.Load(replyHeader_.Xid); ok {
-			self.pendingOperations.Delete(replyHeader_.Xid)
-			self.dequeOfOperations.CommitNodeRemovals(1)
-			operation_ := value.(*operation)
+			if replyHeader_.Zxid >= 1 {
+				self.lastZxid = replyHeader_.Zxid
+			}
 
-			if replyHeader_.Err == 0 {
-				response := reflect.New(operation_.responseType).Interface()
+			if value, ok := self.pendingOperations.Load(replyHeader_.Xid); ok {
+				self.pendingOperations.Delete(replyHeader_.Xid)
+				completedOperationCount++
+				operation_ := value.(*operation)
 
-				if e := deserializeRecord(response, data, &dataOffset); e != nil {
-					return e
+				if replyHeader_.Err == 0 {
+					response := reflect.New(operation_.responseType).Interface()
+
+					if e := deserializeRecord(response, data2, &dataOffset); e != nil {
+						return e
+					}
+
+					if extraDataSize := len(data2) - dataOffset; extraDataSize >= 1 {
+						self.policy.Logger.Warningf("extra data of response: id=%#x, responseType=%v, extraDataSize=%v", self.id, operation_.responseType, extraDataSize)
+					}
+
+					operation_.callback(response, 0)
+				} else {
+					operation_.callback(nil, replyHeader_.Err)
 				}
-
-				operation_.callback(response, 0)
 			} else {
-				operation_.callback(nil, replyHeader_.Err)
-			}
-		} else {
-			switch replyHeader_.Xid {
-			case -1: // -1 means notification
-				var watcherEvent_ watcherEvent
+				switch replyHeader_.Xid {
+				case -1: // -1 means notification
+					var watcherEvent_ watcherEvent
 
-				if e := deserializeRecord(&watcherEvent_, data, &dataOffset); e != nil {
-					return e
+					if e := deserializeRecord(&watcherEvent_, data2, &dataOffset); e != nil {
+						return e
+					}
+
+					if extraDataSize := len(data2) - dataOffset; extraDataSize >= 1 {
+						self.policy.Logger.Warningf("extra data of watcher event: id=%#x, extraDataSize=%v", self.id, extraDataSize)
+					}
+
+					self.fireWatcherEvent(watcherEvent_.Type, watcherEvent_.Path)
+				case -2: // -2 is the xid for pings
+				default:
+					self.policy.Logger.Warningf("ignored reply: id=%#x, replyHeader=%#v", self.id, replyHeader_)
 				}
-
-				self.fireWatcherEvent(watcherEvent_.Type, watcherEvent_.Path)
-			case -2: // -2 is the xid for pings
-			default:
-				self.policy.Logger.Warningf("ignored reply: id=%#x, replyHeader=%#v", self.id, replyHeader_)
 			}
 		}
 
-		self.transport.Skip(len(data))
+		self.dequeOfOperations.CommitNodeRemovals(completedOperationCount)
+		self.transport.SkipAll(data)
 	}
 }
 

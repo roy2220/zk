@@ -75,7 +75,7 @@ func TestWriteAndReadTransport(t *testing.T) {
 		t.Fatalf("%#v != %#v", m1, m3)
 	}
 
-	tp.Skip(len(m3))
+	tp.Skip(m3)
 	m4, e := tp.Peek(context.Background(), 60*time.Second)
 
 	if e != nil {
@@ -86,7 +86,7 @@ func TestWriteAndReadTransport(t *testing.T) {
 		t.Fatalf("%#v != %#v", m2, m4)
 	}
 
-	tp.Skip(len(m4))
+	tp.Skip(m4)
 	m5, e := tp.Peek(context.Background(), 60*time.Second)
 
 	if e != nil {
@@ -97,7 +97,7 @@ func TestWriteAndReadTransport(t *testing.T) {
 		t.Fatalf("%#v != %#v", m1, m5)
 	}
 
-	tp.Skip(len(m5))
+	tp.Skip(m5)
 	_, e = tp.Peek(context.Background(), 60*time.Second)
 
 	if e == nil {
