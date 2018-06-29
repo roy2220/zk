@@ -659,15 +659,14 @@ func (self *session) rewatch(context_ context.Context, transport_ *transport) er
 
 	for watcherType, path2Watchers := range self.watchers {
 		for path, watchers := range path2Watchers {
-			removedWatcherCount := 0
-
 			for watcher := range watchers {
 				if watcher.IsRemoved() {
-					removedWatcherCount++
+					delete(watchers, watcher)
 				}
 			}
 
-			if removedWatcherCount == len(watchers) {
+			if len(watchers) == 0 {
+				delete(path2Watchers, path)
 				continue
 			}
 

@@ -140,10 +140,6 @@ func (self *transport) Flush(context_ context.Context, timeout time.Duration) er
 }
 
 func (self *transport) Peek(context_ context.Context, timeout time.Duration) ([]byte, error) {
-	if self.IsClosed() {
-		return nil, TransportClosedError
-	}
-
 	packet, e := self.doPeek(context_, timeout)
 
 	if e != nil {
@@ -160,10 +156,6 @@ func (self *transport) Skip(packetPayload []byte) {
 }
 
 func (self *transport) PeekAll(context_ context.Context, timeout time.Duration) ([][]byte, error) {
-	if self.IsClosed() {
-		return nil, TransportClosedError
-	}
-
 	packet, e := self.doPeek(context_, timeout)
 
 	if e != nil {
@@ -214,6 +206,10 @@ func (self *transport) initialize(policy *TransportPolicy, connection *net.TCPCo
 }
 
 func (self *transport) doPeek(context_ context.Context, timeout time.Duration) ([]byte, error) {
+	if self.IsClosed() {
+		return nil, TransportClosedError
+	}
+
 	deadlineIsSet := false
 
 	if self.byteStream.GetDataSize() < packetHeaderSize {

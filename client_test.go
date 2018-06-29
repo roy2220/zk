@@ -483,5 +483,5 @@ var serverAddresses = []string{"192.168.33.1:2181", "192.168.33.1:2182", "192.16
 
 func init() {
 	sessionPolicy = &SessionPolicy{}
-	sessionPolicy.Logger.Initialize("zktest", logger.SeverityInfo, os.Stdout, os.Stderr)
+	sessionPolicy.Logger.Initialize("zk", logger.SeverityInfo, os.Stdout, os.Stderr)
 }
