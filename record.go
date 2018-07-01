@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+
+	"github.com/let-z-go/toolkit/byte_stream"
 )
 
 type RecordDeserializationError struct {
@@ -22,14 +24,14 @@ func (self RecordDeserializationError) Error() string {
 }
 
 type serializer interface {
-	Serialize(*[]byte)
+	Serialize(*byte_stream.ByteStream)
 }
 
 type deserializer interface {
 	Deserialize([]byte, *int) error
 }
 
-func serializeRecord(record interface{}, buffer *[]byte) {
+func serializeRecord(record interface{}, byteStream *byte_stream.ByteStream) {
 	rvalue := reflect.ValueOf(record)
 
 	if rvalue.Kind() == reflect.Ptr {
@@ -44,7 +46,7 @@ func serializeRecord(record interface{}, buffer *[]byte) {
 		panic(recordSerializationError{fmt.Sprintf("recordType=%T", record)})
 	}
 
-	doSerializeRecord(rvalue, buffer)
+	doSerializeRecord(rvalue, byteStream)
 }
 
 func deserializeRecord(record interface{}, data []byte, dataOffset *int) error {
@@ -67,24 +69,24 @@ func deserializeRecord(record interface{}, data []byte, dataOffset *int) error {
 	return doDeserializeRecord(lvalue, data, dataOffset)
 }
 
-func doSerializeValue(rvalue reflect.Value, buffer *[]byte) {
+func doSerializeValue(rvalue reflect.Value, byteStream *byte_stream.ByteStream) {
 	switch rvalue.Kind() {
 	case reflect.Bool:
-		doSerializeBoolean(rvalue, buffer)
+		doSerializeBoolean(rvalue, byteStream)
 	case reflect.Int32:
-		doSerializeInt(rvalue, buffer)
+		doSerializeInt(rvalue, byteStream)
 	case reflect.Int64:
-		doSerializeLong(rvalue, buffer)
+		doSerializeLong(rvalue, byteStream)
 	case reflect.String:
-		doSerializeString(rvalue, buffer)
+		doSerializeString(rvalue, byteStream)
 	case reflect.Slice:
 		if rvalue.Type().Elem().Kind() == reflect.Uint8 {
-			doSerializeBuffer(rvalue, buffer)
+			doSerializeBuffer(rvalue, byteStream)
 		} else {
-			doSerializeVector(rvalue, buffer)
+			doSerializeVector(rvalue, byteStream)
 		}
 	case reflect.Struct:
-		doSerializeRecord(rvalue, buffer)
+		doSerializeRecord(rvalue, byteStream)
 	default:
 		panic(recordSerializationError{fmt.Sprintf("valueType=%v", rvalue.Type())})
 	}
@@ -113,16 +115,16 @@ func doDeserializeValue(lvalue reflect.Value, data []byte, dataOffset *int) erro
 	}
 }
 
-func doSerializeBoolean(rvalue reflect.Value, buffer *[]byte) {
-	var byte_ byte
+func doSerializeBoolean(rvalue reflect.Value, byteStream *byte_stream.ByteStream) {
+	byteStream.WriteDirectly(1, func(buffer []byte) error {
+		if rvalue.Bool() {
+			buffer[0] = 1
+		} else {
+			buffer[0] = 0
+		}
 
-	if rvalue.Bool() {
-		byte_ = 1
-	} else {
-		byte_ = 0
-	}
-
-	*buffer = append(*buffer, byte_)
+		return nil
+	})
 }
 
 func doDeserializeBoolean(lvalue reflect.Value, data []byte, dataOffset *int) error {
@@ -137,10 +139,11 @@ func doDeserializeBoolean(lvalue reflect.Value, data []byte, dataOffset *int) er
 	return nil
 }
 
-func doSerializeInt(rvalue reflect.Value, buffer *[]byte) {
-	i := len(*buffer)
-	*buffer = append(*buffer, 0, 0, 0, 0)
-	binary.BigEndian.PutUint32((*buffer)[i:], uint32(rvalue.Int()))
+func doSerializeInt(rvalue reflect.Value, byteStream *byte_stream.ByteStream) {
+	byteStream.WriteDirectly(4, func(buffer []byte) error {
+		binary.BigEndian.PutUint32(buffer, uint32(rvalue.Int()))
+		return nil
+	})
 }
 
 func doDeserializeInt(lvalue reflect.Value, data []byte, dataOffset *int) error {
@@ -155,10 +158,11 @@ func doDeserializeInt(lvalue reflect.Value, data []byte, dataOffset *int) error 
 	return nil
 }
 
-func doSerializeLong(rvalue reflect.Value, buffer *[]byte) {
-	i := len(*buffer)
-	*buffer = append(*buffer, 0, 0, 0, 0, 0, 0, 0, 0)
-	binary.BigEndian.PutUint64((*buffer)[i:], uint64(rvalue.Int()))
+func doSerializeLong(rvalue reflect.Value, byteStream *byte_stream.ByteStream) {
+	byteStream.WriteDirectly(8, func(buffer []byte) error {
+		binary.BigEndian.PutUint64(buffer, uint64(rvalue.Int()))
+		return nil
+	})
 }
 
 func doDeserializeLong(lvalue reflect.Value, data []byte, dataOffset *int) error {
@@ -173,14 +177,15 @@ func doDeserializeLong(lvalue reflect.Value, data []byte, dataOffset *int) error
 	return nil
 }
 
-func serializeLen(l int, buffer *[]byte) {
+func serializeLen(l int, byteStream *byte_stream.ByteStream) {
 	if l < math.MinInt32 || l > math.MaxInt32 {
 		panic(recordSerializationError{fmt.Sprintf("len=%#v", l)})
 	}
 
-	i := len(*buffer)
-	*buffer = append(*buffer, 0, 0, 0, 0)
-	binary.BigEndian.PutUint32((*buffer)[i:], uint32(l))
+	byteStream.WriteDirectly(4, func(buffer []byte) error {
+		binary.BigEndian.PutUint32(buffer, uint32(l))
+		return nil
+	})
 }
 
 func deserializeLen(data []byte, dataOffset *int) (int, error) {
@@ -195,13 +200,13 @@ func deserializeLen(data []byte, dataOffset *int) (int, error) {
 	return l, nil
 }
 
-func doSerializeBuffer(rvalue reflect.Value, buffer *[]byte) {
+func doSerializeBuffer(rvalue reflect.Value, byteStream *byte_stream.ByteStream) {
 	if rvalue.IsNil() {
-		serializeLen(-1, buffer)
+		serializeLen(-1, byteStream)
 	} else {
 		bytes := rvalue.Bytes()
-		serializeLen(len(bytes), buffer)
-		*buffer = append(*buffer, bytes...)
+		serializeLen(len(bytes), byteStream)
+		byteStream.Write(bytes)
 	}
 }
 
@@ -228,10 +233,10 @@ func doDeserializeBuffer(lvalue reflect.Value, data []byte, dataOffset *int) err
 	return nil
 }
 
-func doSerializeString(rvalue reflect.Value, buffer *[]byte) {
+func doSerializeString(rvalue reflect.Value, byteStream *byte_stream.ByteStream) {
 	bytes := []byte(rvalue.String())
-	serializeLen(len(bytes), buffer)
-	*buffer = append(*buffer, bytes...)
+	serializeLen(len(bytes), byteStream)
+	byteStream.Write(bytes)
 }
 
 func doDeserializeString(lvalue reflect.Value, data []byte, dataOffset *int) error {
@@ -256,15 +261,15 @@ func doDeserializeString(lvalue reflect.Value, data []byte, dataOffset *int) err
 	return nil
 }
 
-func doSerializeVector(rvalue reflect.Value, buffer *[]byte) {
+func doSerializeVector(rvalue reflect.Value, byteStream *byte_stream.ByteStream) {
 	if rvalue.IsNil() {
-		serializeLen(-1, buffer)
+		serializeLen(-1, byteStream)
 	} else {
 		numberOfElements := rvalue.Len()
-		serializeLen(numberOfElements, buffer)
+		serializeLen(numberOfElements, byteStream)
 
 		for i := 0; i < numberOfElements; i++ {
-			doSerializeValue(rvalue.Index(i), buffer)
+			doSerializeValue(rvalue.Index(i), byteStream)
 		}
 	}
 }
@@ -291,15 +296,15 @@ func doDeserializeVector(lvalue reflect.Value, data []byte, dataOffset *int) err
 	return nil
 }
 
-func doSerializeRecord(rvalue reflect.Value, buffer *[]byte) {
+func doSerializeRecord(rvalue reflect.Value, byteStream *byte_stream.ByteStream) {
 	if rvalue.CanAddr() {
 		if serializer_, ok := rvalue.Addr().Interface().(serializer); ok {
-			serializer_.Serialize(buffer)
+			serializer_.Serialize(byteStream)
 			return
 		}
 	} else {
 		if serializer_, ok := rvalue.Interface().(serializer); ok {
-			serializer_.Serialize(buffer)
+			serializer_.Serialize(byteStream)
 			return
 		}
 	}
@@ -307,7 +312,7 @@ func doSerializeRecord(rvalue reflect.Value, buffer *[]byte) {
 	numberOfFields := rvalue.NumField()
 
 	for i := 0; i < numberOfFields; i++ {
-		doSerializeValue(rvalue.Field(i), buffer)
+		doSerializeValue(rvalue.Field(i), byteStream)
 	}
 }
 

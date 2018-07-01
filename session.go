@@ -13,6 +13,7 @@ import (
 	"unsafe"
 
 	"github.com/let-z-go/intrusive_containers/list"
+	"github.com/let-z-go/toolkit/byte_stream"
 	"github.com/let-z-go/toolkit/deque"
 	"github.com/let-z-go/toolkit/logger"
 	"github.com/let-z-go/toolkit/semaphore"
@@ -568,10 +569,10 @@ func (self *session) doConnect(context_ context.Context, transport_ *transport, 
 		Passwd:          self.password,
 	}
 
-	buffer := []byte(nil)
-	serializeRecord(&request, &buffer)
-
-	if e := transport_.Write(buffer); e != nil {
+	if e := transport_.Write(func(byteStream *byte_stream.ByteStream) error {
+		serializeRecord(&request, byteStream)
+		return nil
+	}); e != nil {
 		return e
 	}
 
@@ -619,10 +620,10 @@ func (self *session) doClose(transport_ *transport) error {
 		Type: OpCloseSession,
 	}
 
-	buffer := []byte(nil)
-	serializeRecord(&requestHeader_, &buffer)
-
-	if e := transport_.Write(buffer); e != nil {
+	if e := transport_.Write(func(byteStream *byte_stream.ByteStream) error {
+		serializeRecord(&requestHeader_, byteStream)
+		return nil
+	}); e != nil {
 		return e
 	}
 
@@ -739,11 +740,11 @@ func (self *session) executeOperation(
 		Type: opCode,
 	}
 
-	buffer := []byte(nil)
-	serializeRecord(&requestHeader_, &buffer)
-	serializeRecord(request, &buffer)
-
-	if e := transport_.Write(buffer); e != nil {
+	if e := transport_.Write(func(byteStream *byte_stream.ByteStream) error {
+		serializeRecord(&requestHeader_, byteStream)
+		serializeRecord(request, byteStream)
+		return nil
+	}); e != nil {
 		return nil, e
 	}
 
@@ -854,10 +855,10 @@ func (self *session) sendRequests(context_ context.Context) error {
 				Type: OpPing,
 			}
 
-			buffer := []byte(nil)
-			serializeRecord(&requestHeader_, &buffer)
-
-			if e := self.transport.Write(buffer); e != nil {
+			if e := self.transport.Write(func(byteStream *byte_stream.ByteStream) error {
+				serializeRecord(&requestHeader_, byteStream)
+				return nil
+			}); e != nil {
 				return e
 			}
 		} else {
@@ -873,11 +874,11 @@ func (self *session) sendRequests(context_ context.Context) error {
 					Type: operation_.opCode,
 				}
 
-				buffer := []byte(nil)
-				serializeRecord(&requestHeader_, &buffer)
-				serializeRecord(operation_.request, &buffer)
-
-				if e := self.transport.Write(buffer); e != nil {
+				if e := self.transport.Write(func(byteStream *byte_stream.ByteStream) error {
+					serializeRecord(&requestHeader_, byteStream)
+					serializeRecord(operation_.request, byteStream)
+					return nil
+				}); e != nil {
 					return e
 				}
 

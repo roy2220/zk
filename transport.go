@@ -40,12 +40,11 @@ const minMaxPacketPayloadSize = (1 << 20) - 1
 const packetHeaderSize = 4
 
 type transport struct {
-	policy         *TransportPolicy
-	connection     *net.TCPConn
-	packetPayloads [][]byte
-	packets        []byte
-	byteStream     byte_stream.ByteStream
-	openness       int32
+	policy           *TransportPolicy
+	connection       *net.TCPConn
+	inputByteStream  byte_stream.ByteStream
+	outputByteStream byte_stream.ByteStream
+	openness         int32
 }
 
 func (self *transport) Connect(context_ context.Context, policy *TransportPolicy, serverAddress string) error {
@@ -82,65 +81,9 @@ func (self *transport) Close() error {
 	e := self.connection.Close()
 	self.policy = nil
 	self.connection = nil
-	self.packetPayloads = nil
-	self.packets = nil
-	self.byteStream.Collect()
+	self.inputByteStream.Collect()
+	self.outputByteStream.Collect()
 	self.openness = -1
-	return e
-}
-
-func (self *transport) Write(packetPayload []byte) error {
-	if self.IsClosed() {
-		return TransportClosedError
-	}
-
-	if len(packetPayload) > int(self.policy.MaxPacketPayloadSize) {
-		return PacketPayloadTooLargeError
-	}
-
-	self.packetPayloads = append(self.packetPayloads, packetPayload)
-	return nil
-}
-
-func (self *transport) Flush(context_ context.Context, timeout time.Duration) error {
-	if self.IsClosed() {
-		return TransportClosedError
-	}
-
-	if len(self.packets) == 0 {
-		totalPacketSize := 0
-
-		for _, packetPayload := range self.packetPayloads {
-			totalPacketSize += packetHeaderSize + len(packetPayload)
-		}
-
-		packets := make([]byte, totalPacketSize)
-		totalPacketSize = 0
-
-		for i, packetPayload := range self.packetPayloads {
-			self.packetPayloads[i] = nil
-			packet := packets[totalPacketSize:]
-			binary.BigEndian.PutUint32(packet, uint32(len(packetPayload)))
-			copy(packet[packetHeaderSize:], packetPayload)
-			totalPacketSize += packetHeaderSize + len(packetPayload)
-		}
-
-		self.packetPayloads = self.packetPayloads[0:0]
-		self.packets = packets
-	}
-
-	deadline, e := makeDeadline(context_, timeout)
-
-	if e != nil {
-		return e
-	}
-
-	if e := self.connection.SetWriteDeadline(deadline); e != nil {
-		return e
-	}
-
-	n, e := self.connection.Write(self.packets)
-	self.packets = self.packets[n:]
 	return e
 }
 
@@ -157,7 +100,7 @@ func (self *transport) Peek(context_ context.Context, timeout time.Duration) ([]
 
 func (self *transport) Skip(packetPayload []byte) {
 	packetSize := packetHeaderSize + len(packetPayload)
-	self.byteStream.DiscardData(packetSize)
+	self.inputByteStream.Skip(packetSize)
 }
 
 func (self *transport) PeekInBatch(context_ context.Context, timeout time.Duration) ([][]byte, error) {
@@ -191,7 +134,55 @@ func (self *transport) SkipInBatch(packetPayloads [][]byte) {
 		totalPacketSize += packetHeaderSize + len(packetPayload)
 	}
 
-	self.byteStream.DiscardData(totalPacketSize)
+	self.inputByteStream.Skip(totalPacketSize)
+}
+
+func (self *transport) Write(callback func(*byte_stream.ByteStream) error) error {
+	if self.IsClosed() {
+		return TransportClosedError
+	}
+
+	i := self.outputByteStream.GetDataSize()
+
+	self.outputByteStream.WriteDirectly(packetHeaderSize, func(buffer []byte) error {
+		return nil
+	})
+
+	if e := callback(&self.outputByteStream); e != nil {
+		self.outputByteStream.Unwrite(self.outputByteStream.GetDataSize() - i)
+		return e
+	}
+
+	packet := self.outputByteStream.GetData()[i:]
+	packetPayloadSize := len(packet) - packetHeaderSize
+
+	if packetPayloadSize > int(self.policy.MaxPacketPayloadSize) {
+		self.outputByteStream.Unwrite(len(packet))
+		return PacketPayloadTooLargeError
+	}
+
+	binary.BigEndian.PutUint32(packet, uint32(packetPayloadSize))
+	return nil
+}
+
+func (self *transport) Flush(context_ context.Context, timeout time.Duration) error {
+	if self.IsClosed() {
+		return TransportClosedError
+	}
+
+	deadline, e := makeDeadline(context_, timeout)
+
+	if e != nil {
+		return e
+	}
+
+	if e := self.connection.SetWriteDeadline(deadline); e != nil {
+		return e
+	}
+
+	n, e := self.connection.Write(self.outputByteStream.GetData())
+	self.outputByteStream.Skip(n)
+	return e
 }
 
 func (self *transport) IsClosed() bool {
@@ -206,7 +197,7 @@ func (self *transport) initialize(policy *TransportPolicy, connection *net.TCPCo
 	policy.Validate()
 	self.policy = policy
 	self.connection = connection
-	self.byteStream.ReserveBuffer(int(policy.InitialReadBufferSize))
+	self.inputByteStream.ReserveBuffer(int(policy.InitialReadBufferSize))
 	self.openness = 1
 }
 
@@ -217,7 +208,7 @@ func (self *transport) doPeek(context_ context.Context, timeout time.Duration) (
 
 	deadlineIsSet := false
 
-	if self.byteStream.GetDataSize() < packetHeaderSize {
+	if self.inputByteStream.GetDataSize() < packetHeaderSize {
 		deadline, e := makeDeadline(context_, timeout)
 
 		if e != nil {
@@ -231,17 +222,17 @@ func (self *transport) doPeek(context_ context.Context, timeout time.Duration) (
 		deadlineIsSet = true
 
 		for {
-			dataSize, e := self.connection.Read(self.byteStream.GetBuffer())
+			dataSize, e := self.connection.Read(self.inputByteStream.GetBuffer())
 
 			if dataSize == 0 {
 				return nil, e
 			}
 
-			self.byteStream.CommitBuffer(dataSize)
+			self.inputByteStream.CommitBuffer(dataSize)
 
-			if self.byteStream.GetDataSize() >= packetHeaderSize {
-				if self.byteStream.GetBufferSize() == 0 {
-					self.byteStream.ReserveBuffer(1)
+			if self.inputByteStream.GetDataSize() >= packetHeaderSize {
+				if self.inputByteStream.GetBufferSize() == 0 {
+					self.inputByteStream.ReserveBuffer(1)
 				}
 
 				break
@@ -249,7 +240,7 @@ func (self *transport) doPeek(context_ context.Context, timeout time.Duration) (
 		}
 	}
 
-	packetHeader := self.byteStream.GetData()[:packetHeaderSize]
+	packetHeader := self.inputByteStream.GetData()[:packetHeaderSize]
 	packetPayloadSize := int(binary.BigEndian.Uint32(packetHeader))
 
 	if packetPayloadSize > int(self.policy.MaxPacketPayloadSize) {
@@ -259,7 +250,7 @@ func (self *transport) doPeek(context_ context.Context, timeout time.Duration) (
 
 	packetSize := packetHeaderSize + packetPayloadSize
 
-	if bufferSize := packetSize - self.byteStream.GetDataSize(); bufferSize >= 1 {
+	if bufferSize := packetSize - self.inputByteStream.GetDataSize(); bufferSize >= 1 {
 		if !deadlineIsSet {
 			deadline, e := makeDeadline(context_, timeout)
 
@@ -272,20 +263,20 @@ func (self *transport) doPeek(context_ context.Context, timeout time.Duration) (
 			}
 		}
 
-		self.byteStream.ReserveBuffer(bufferSize)
+		self.inputByteStream.ReserveBuffer(bufferSize)
 
 		for {
-			dataSize, e := self.connection.Read(self.byteStream.GetBuffer())
+			dataSize, e := self.connection.Read(self.inputByteStream.GetBuffer())
 
 			if dataSize == 0 {
 				return nil, e
 			}
 
-			self.byteStream.CommitBuffer(dataSize)
+			self.inputByteStream.CommitBuffer(dataSize)
 
-			if self.byteStream.GetDataSize() >= packetSize {
-				if self.byteStream.GetBufferSize() == 0 {
-					self.byteStream.ReserveBuffer(1)
+			if self.inputByteStream.GetDataSize() >= packetSize {
+				if self.inputByteStream.GetBufferSize() == 0 {
+					self.inputByteStream.ReserveBuffer(1)
 				}
 
 				break
@@ -293,16 +284,16 @@ func (self *transport) doPeek(context_ context.Context, timeout time.Duration) (
 		}
 	}
 
-	packet := self.byteStream.GetData()[:packetSize]
+	packet := self.inputByteStream.GetData()[:packetSize]
 	return packet, nil
 }
 
 func (self *transport) tryPeek(dataOffset int) ([]byte, bool) {
-	if self.byteStream.GetDataSize()-dataOffset < packetHeaderSize {
+	if self.inputByteStream.GetDataSize()-dataOffset < packetHeaderSize {
 		return nil, false
 	}
 
-	packetHeader := self.byteStream.GetData()[dataOffset : dataOffset+packetHeaderSize]
+	packetHeader := self.inputByteStream.GetData()[dataOffset : dataOffset+packetHeaderSize]
 	packetPayloadSize := int(binary.BigEndian.Uint32(packetHeader))
 
 	if packetPayloadSize > int(self.policy.MaxPacketPayloadSize) {
@@ -311,11 +302,11 @@ func (self *transport) tryPeek(dataOffset int) ([]byte, bool) {
 
 	packetSize := packetHeaderSize + packetPayloadSize
 
-	if self.byteStream.GetDataSize()-dataOffset < packetSize {
+	if self.inputByteStream.GetDataSize()-dataOffset < packetSize {
 		return nil, false
 	}
 
-	packet := self.byteStream.GetData()[dataOffset : dataOffset+packetSize]
+	packet := self.inputByteStream.GetData()[dataOffset : dataOffset+packetSize]
 	return packet, true
 }
 

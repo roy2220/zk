@@ -7,6 +7,8 @@ import (
 	"net"
 	"testing"
 	"time"
+
+	"github.com/let-z-go/toolkit/byte_stream"
 )
 
 func TestWriteAndReadTransport(t *testing.T) {
@@ -32,7 +34,10 @@ func TestWriteAndReadTransport(t *testing.T) {
 
 		defer tp.Close()
 
-		if e := tp.Write(m1); e != nil {
+		if e := tp.Write(func(byteStream *byte_stream.ByteStream) error {
+			byteStream.Write(m1)
+			return nil
+		}); e != nil {
 			t.Fatalf("%v", e)
 		}
 
@@ -42,11 +47,17 @@ func TestWriteAndReadTransport(t *testing.T) {
 
 		time.Sleep(time.Second / 5)
 
-		if e := tp.Write(m2); e != nil {
+		if e := tp.Write(func(byteStream *byte_stream.ByteStream) error {
+			byteStream.Write(m2)
+			return nil
+		}); e != nil {
 			t.Fatalf("%v", e)
 		}
 
-		if e := tp.Write(m1); e != nil {
+		if e := tp.Write(func(byteStream *byte_stream.ByteStream) error {
+			byteStream.Write(m1)
+			return nil
+		}); e != nil {
 			t.Fatalf("%v", e)
 		}
 

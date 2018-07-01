@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"runtime/debug"
 	"testing"
+
+	"github.com/let-z-go/toolkit/byte_stream"
 )
 
 func TestSerializeAnddeserializeRecord1(t *testing.T) {
@@ -16,18 +18,23 @@ func TestSerializeAnddeserializeRecord1(t *testing.T) {
 	}
 
 	inFoo := Foo{B: true, I: -99, L: 0xFFFFFFFFF, Bf: []byte("\xde\xad\xbe\xef"), S: "testtest"}
-	buffer1 := []byte(nil)
-	serializeRecord(inFoo, &buffer1)
-	buffer2 := []byte(nil)
-	serializeRecord(&inFoo, &buffer2)
+	var bs1 byte_stream.ByteStream
+	serializeRecord(inFoo, &bs1)
+	var bs2 byte_stream.ByteStream
+	serializeRecord(&inFoo, &bs2)
 
-	if !bytes.Equal(buffer1, buffer2) {
+	if !bytes.Equal(bs1.GetData(), bs2.GetData()) {
 		t.Error("buffer1 != buffer2")
 	}
 
 	dataOffset := 0
 	outFoo := Foo{}
-	e := deserializeRecord(&outFoo, buffer1, &dataOffset)
+	e := deserializeRecord(&outFoo, bs1.GetData(), &dataOffset)
+	bs1.Skip(dataOffset)
+
+	if sz := bs1.GetDataSize(); sz != 0 {
+		t.Errorf("%#v", sz)
+	}
 
 	if e != nil {
 		t.Fatalf("%v", e)
@@ -52,10 +59,6 @@ func TestSerializeAnddeserializeRecord1(t *testing.T) {
 	if outFoo.S != inFoo.S {
 		t.Errorf("%#v != %#v", outFoo.S, inFoo.S)
 	}
-
-	if dataOffset != len(buffer1) {
-		t.Errorf("%#v != %#v", dataOffset, len(buffer1))
-	}
 }
 
 func TestSerializeAnddeserializeRecord2(t *testing.T) {
@@ -72,18 +75,18 @@ func TestSerializeAnddeserializeRecord2(t *testing.T) {
 		Foo{Vec: []int32{7, 8, 9}},
 	}}
 
-	buffer1 := []byte(nil)
-	serializeRecord(inBar, &buffer1)
-	buffer2 := []byte(nil)
-	serializeRecord(&inBar, &buffer2)
+	var bs1 byte_stream.ByteStream
+	serializeRecord(inBar, &bs1)
+	var bs2 byte_stream.ByteStream
+	serializeRecord(&inBar, &bs2)
 
-	if !bytes.Equal(buffer1, buffer2) {
+	if !bytes.Equal(bs1.GetData(), bs2.GetData()) {
 		t.Error("buffer1 != buffer2")
 	}
 
 	dataOffset := 0
 	outBar := Bar{}
-	e := deserializeRecord(&outBar, buffer1, &dataOffset)
+	e := deserializeRecord(&outBar, bs1.GetData(), &dataOffset)
 
 	if e != nil {
 		t.Fatalf("%v", e)
@@ -130,8 +133,8 @@ func TestSerializeRecord(t *testing.T) {
 	}()
 
 	inFoo := Foo{}
-	buffer := []byte(nil)
-	serializeRecord(inFoo, &buffer)
+	var bs byte_stream.ByteStream
+	serializeRecord(inFoo, &bs)
 }
 
 func TestDeserializeRecord(t *testing.T) {
@@ -173,7 +176,7 @@ type fooX struct {
 	D bool
 }
 
-func (f fooX) Serialize(*[]byte) {
+func (f fooX) Serialize(*byte_stream.ByteStream) {
 	fooXS = true
 	return
 }
@@ -184,16 +187,16 @@ func (f *fooX) Deserialize([]byte, *int) error {
 }
 
 func TestSerializeAnddeserializeRecord3(t *testing.T) {
-	buffer := []byte(nil)
+	var bs byte_stream.ByteStream
 	var fx fooX
-	serializeRecord(&fx, &buffer)
+	serializeRecord(&fx, &bs)
 
 	if !fooXS {
 		t.Error()
 	}
 
 	dataOffset := 0
-	e := deserializeRecord(&fx, buffer, &dataOffset)
+	e := deserializeRecord(&fx, bs.GetData(), &dataOffset)
 
 	if e != nil {
 		t.Fatalf("%v", e)

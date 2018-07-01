@@ -2,6 +2,8 @@ package zk
 
 import (
 	"fmt"
+
+	"github.com/let-z-go/toolkit/byte_stream"
 )
 
 const (
@@ -328,7 +330,7 @@ type MultiRequest struct {
 	Ops []Op
 }
 
-func (self MultiRequest) Serialize(buffer *[]byte) {
+func (self MultiRequest) Serialize(byteStream *byte_stream.ByteStream) {
 	for i := range self.Ops {
 		op := &self.Ops[i]
 
@@ -338,8 +340,8 @@ func (self MultiRequest) Serialize(buffer *[]byte) {
 			Err:  -1,
 		}
 
-		serializeRecord(&header, buffer)
-		serializeRecord(op.Request, buffer)
+		serializeRecord(&header, byteStream)
+		serializeRecord(op.Request, byteStream)
 	}
 
 	header := multiHeader{
@@ -348,7 +350,7 @@ func (self MultiRequest) Serialize(buffer *[]byte) {
 		Err:  -1,
 	}
 
-	serializeRecord(&header, buffer)
+	serializeRecord(&header, byteStream)
 }
 
 type MultiResponse struct {
