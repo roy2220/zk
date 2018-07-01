@@ -188,11 +188,21 @@ type AuthInfo struct {
 var WatcherRemovedError = errors.New("zk: watcher removed")
 var SessionClosedError = errors.New("zk: session closed")
 
+const minSessionTimeout = 4 * time.Second
+const maxSessionTimeout = 40 * time.Second
+const minMaxNumberOfPendingOperations = 1 << 4
+const maxMaxNumberOfPendingOperations = 1 << 16
+const protocolVersion = 0
+const maxSetWatchesSize = 1 << 17
+const setWatchesOverheadSize = 28
+const stringOverheadSize = 4
+const closeTimeoutOfSession = 200 * time.Millisecond
+
 type session struct {
 	policy            *SessionPolicy
 	state             int32
-	listeners         map[*SessionListener]struct{}
 	lockOfListeners   sync.Mutex
+	listeners         map[*SessionListener]struct{}
 	lastZxid          int64
 	timeout           time.Duration
 	id                int64
@@ -616,7 +626,7 @@ func (self *session) doClose(transport_ *transport) error {
 		return e
 	}
 
-	if e := transport_.Flush(context.Background(), sessionCloseTimeout); e != nil {
+	if e := transport_.Flush(context.Background(), closeTimeoutOfSession); e != nil {
 		return e
 	}
 
@@ -900,7 +910,7 @@ func (self *session) receiveResponses(context_ context.Context) error {
 
 		for {
 			var e error
-			data, e = self.transport.PeekAll(context_, self.getMinPingInterval())
+			data, e = self.transport.PeekInBatch(context_, self.getMinPingInterval())
 
 			if e != nil {
 				if e, ok := e.(net.Error); ok && e.Timeout() {
@@ -974,7 +984,7 @@ func (self *session) receiveResponses(context_ context.Context) error {
 		}
 
 		self.dequeOfOperations.CommitNodeRemovals(completedOperationCount)
-		self.transport.SkipAll(data)
+		self.transport.SkipInBatch(data)
 	}
 }
 
@@ -1017,16 +1027,6 @@ func (self invalidSessionStateError) Error() string {
 
 	return result
 }
-
-const minSessionTimeout = 4 * time.Second
-const maxSessionTimeout = 40 * time.Second
-const minMaxNumberOfPendingOperations = 1 << 4
-const maxMaxNumberOfPendingOperations = 1 << 16
-const protocolVersion = 0
-const maxSetWatchesSize = 1 << 17
-const setWatchesOverheadSize = 28
-const stringOverheadSize = 4
-const sessionCloseTimeout = 200 * time.Millisecond
 
 var watcherEventType2WatcherTypes = [...][]WatcherType{
 	WatcherEventNone:                nil,

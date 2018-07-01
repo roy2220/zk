@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/let-z-go/toolkit/byte_stream"
@@ -20,10 +19,10 @@ type TransportPolicy struct {
 
 func (self *TransportPolicy) Validate() {
 	self.validateOnce.Do(func() {
-		if self.InitialReadBufferSize < minInitialTransportReadBufferSize {
-			self.InitialReadBufferSize = minInitialTransportReadBufferSize
-		} else if self.InitialReadBufferSize > maxInitialTransportReadBufferSize {
-			self.InitialReadBufferSize = maxInitialTransportReadBufferSize
+		if self.InitialReadBufferSize < minInitialReadBufferSizeOfTransport {
+			self.InitialReadBufferSize = minInitialReadBufferSizeOfTransport
+		} else if self.InitialReadBufferSize > maxInitialReadBufferSizeOfTransport {
+			self.InitialReadBufferSize = maxInitialReadBufferSizeOfTransport
 		}
 
 		if self.MaxPacketPayloadSize < minMaxPacketPayloadSize {
@@ -34,6 +33,11 @@ func (self *TransportPolicy) Validate() {
 
 var TransportClosedError = errors.New("zk: transport closed")
 var PacketPayloadTooLargeError = errors.New("zk: packet payload too large")
+
+const minInitialReadBufferSizeOfTransport = 1 << 4
+const maxInitialReadBufferSizeOfTransport = 1 << 16
+const minMaxPacketPayloadSize = (1 << 20) - 1
+const packetHeaderSize = 4
 
 type transport struct {
 	policy         *TransportPolicy
@@ -71,7 +75,7 @@ func (self *transport) Accept(policy *TransportPolicy, connection *net.TCPConn) 
 }
 
 func (self *transport) Close() error {
-	if !atomic.CompareAndSwapInt32(&self.openness, 1, -1) {
+	if self.IsClosed() {
 		return TransportClosedError
 	}
 
@@ -81,6 +85,7 @@ func (self *transport) Close() error {
 	self.packetPayloads = nil
 	self.packets = nil
 	self.byteStream.Collect()
+	self.openness = -1
 	return e
 }
 
@@ -114,9 +119,9 @@ func (self *transport) Flush(context_ context.Context, timeout time.Duration) er
 
 		for i, packetPayload := range self.packetPayloads {
 			self.packetPayloads[i] = nil
-			packetHeader := packets[totalPacketSize:]
-			binary.BigEndian.PutUint32(packetHeader, uint32(len(packetPayload)))
-			copy(packets[totalPacketSize+packetHeaderSize:], packetPayload)
+			packet := packets[totalPacketSize:]
+			binary.BigEndian.PutUint32(packet, uint32(len(packetPayload)))
+			copy(packet[packetHeaderSize:], packetPayload)
 			totalPacketSize += packetHeaderSize + len(packetPayload)
 		}
 
@@ -155,7 +160,7 @@ func (self *transport) Skip(packetPayload []byte) {
 	self.byteStream.DiscardData(packetSize)
 }
 
-func (self *transport) PeekAll(context_ context.Context, timeout time.Duration) ([][]byte, error) {
+func (self *transport) PeekInBatch(context_ context.Context, timeout time.Duration) ([][]byte, error) {
 	packet, e := self.doPeek(context_, timeout)
 
 	if e != nil {
@@ -179,7 +184,7 @@ func (self *transport) PeekAll(context_ context.Context, timeout time.Duration) 
 	return packetPayloads, nil
 }
 
-func (self *transport) SkipAll(packetPayloads [][]byte) {
+func (self *transport) SkipInBatch(packetPayloads [][]byte) {
 	totalPacketSize := 0
 
 	for _, packetPayload := range packetPayloads {
@@ -190,7 +195,7 @@ func (self *transport) SkipAll(packetPayloads [][]byte) {
 }
 
 func (self *transport) IsClosed() bool {
-	return atomic.LoadInt32(&self.openness) != 1
+	return self.openness != 1
 }
 
 func (self *transport) initialize(policy *TransportPolicy, connection *net.TCPConn) {
@@ -313,11 +318,6 @@ func (self *transport) tryPeek(dataOffset int) ([]byte, bool) {
 	packet := self.byteStream.GetData()[dataOffset : dataOffset+packetSize]
 	return packet, true
 }
-
-const minInitialTransportReadBufferSize = 1 << 4
-const maxInitialTransportReadBufferSize = 1 << 16
-const minMaxPacketPayloadSize = (1 << 20) - 1
-const packetHeaderSize = 4
 
 func makeDeadline(context_ context.Context, timeout time.Duration) (time.Time, error) {
 	if e := context_.Err(); e != nil {

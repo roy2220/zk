@@ -14,9 +14,9 @@ import (
 type lockBase struct {
 	client       *zk.Client
 	path         string
+	mutex        sync.Mutex
 	myWaiterPath string
 	ownerCount   int
-	mutex        sync.Mutex
 }
 
 func (self *lockBase) Initialize(client *zk.Client, path string) {

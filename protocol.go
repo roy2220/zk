@@ -126,27 +126,27 @@ type Perms int32
 func (self Perms) GoString() string {
 	result := "<"
 
-	if self&PermsRead != 0 {
+	if self&PermsRead == PermsRead {
 		result += "PermsRead|"
 		self &^= PermsRead
 	}
 
-	if self&PermsWrite != 0 {
+	if self&PermsWrite == PermsWrite {
 		result += "PermsWrite|"
 		self &^= PermsWrite
 	}
 
-	if self&PermsCreate != 0 {
+	if self&PermsCreate == PermsCreate {
 		result += "PermsCreate|"
 		self &^= PermsCreate
 	}
 
-	if self&PermsDelete != 0 {
+	if self&PermsDelete == PermsDelete {
 		result += "PermsDelete|"
 		self &^= PermsDelete
 	}
 
-	if self&PermsAdmin != 0 {
+	if self&PermsAdmin == PermsAdmin {
 		result += "PermsAdmin|"
 		self &^= PermsAdmin
 	}
