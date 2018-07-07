@@ -5,11 +5,17 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/let-z-go/zk"
 	"github.com/let-z-go/zk/recipes/utils"
 )
 
 type SharedLock struct {
 	lockBase
+}
+
+func (self *SharedLock) Initialize(client *zk.Client, path string) *SharedLock {
+	self.lockBase.initialize(client, path)
+	return self
 }
 
 func (self *SharedLock) Acquire(context_ context.Context) error {

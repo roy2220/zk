@@ -17,23 +17,30 @@ type TransportPolicy struct {
 	validateOnce          sync.Once
 }
 
-func (self *TransportPolicy) Validate() {
+func (self *TransportPolicy) Validate() *TransportPolicy {
 	self.validateOnce.Do(func() {
-		if self.InitialReadBufferSize < minInitialReadBufferSizeOfTransport {
-			self.InitialReadBufferSize = minInitialReadBufferSizeOfTransport
-		} else if self.InitialReadBufferSize > maxInitialReadBufferSizeOfTransport {
-			self.InitialReadBufferSize = maxInitialReadBufferSizeOfTransport
+		if self.InitialReadBufferSize == 0 {
+			self.InitialReadBufferSize = defaultInitialReadBufferSizeOfTransport
+		} else {
+			if self.InitialReadBufferSize < minInitialReadBufferSizeOfTransport {
+				self.InitialReadBufferSize = minInitialReadBufferSizeOfTransport
+			} else if self.InitialReadBufferSize > maxInitialReadBufferSizeOfTransport {
+				self.InitialReadBufferSize = maxInitialReadBufferSizeOfTransport
+			}
 		}
 
 		if self.MaxPacketPayloadSize < minMaxPacketPayloadSize {
 			self.MaxPacketPayloadSize = minMaxPacketPayloadSize
 		}
 	})
+
+	return self
 }
 
 var TransportClosedError = errors.New("zk: transport closed")
 var PacketPayloadTooLargeError = errors.New("zk: packet payload too large")
 
+const defaultInitialReadBufferSizeOfTransport = 1 << 10
 const minInitialReadBufferSizeOfTransport = 1 << 4
 const maxInitialReadBufferSizeOfTransport = 1 << 16
 const minMaxPacketPayloadSize = (1 << 20) - 1
@@ -41,13 +48,13 @@ const packetHeaderSize = 4
 
 type transport struct {
 	policy           *TransportPolicy
-	connection       *net.TCPConn
+	connection       net.Conn
 	inputByteStream  byte_stream.ByteStream
 	outputByteStream byte_stream.ByteStream
 	openness         int32
 }
 
-func (self *transport) Connect(context_ context.Context, policy *TransportPolicy, serverAddress string) error {
+func (self *transport) connect(context_ context.Context, policy *TransportPolicy, serverAddress string) error {
 	var connection net.Conn
 	var e error
 
@@ -65,16 +72,16 @@ func (self *transport) Connect(context_ context.Context, policy *TransportPolicy
 		return e
 	}
 
-	self.initialize(policy, connection.(*net.TCPConn))
+	self.initialize(policy, connection.(net.Conn))
 	return nil
 }
 
-func (self *transport) Accept(policy *TransportPolicy, connection *net.TCPConn) {
-	self.initialize(policy, connection)
+func (self *transport) accept(policy *TransportPolicy, connection net.Conn) *transport {
+	return self.initialize(policy, connection)
 }
 
-func (self *transport) Close() error {
-	if self.IsClosed() {
+func (self *transport) close() error {
+	if self.isClosed() {
 		return TransportClosedError
 	}
 
@@ -87,7 +94,7 @@ func (self *transport) Close() error {
 	return e
 }
 
-func (self *transport) Peek(context_ context.Context, timeout time.Duration) ([]byte, error) {
+func (self *transport) peek(context_ context.Context, timeout time.Duration) ([]byte, error) {
 	packet, e := self.doPeek(context_, timeout)
 
 	if e != nil {
@@ -98,12 +105,17 @@ func (self *transport) Peek(context_ context.Context, timeout time.Duration) ([]
 	return packetPayload, nil
 }
 
-func (self *transport) Skip(packetPayload []byte) {
+func (self *transport) skip(packetPayload []byte) error {
+	if self.isClosed() {
+		return TransportClosedError
+	}
+
 	packetSize := packetHeaderSize + len(packetPayload)
 	self.inputByteStream.Skip(packetSize)
+	return nil
 }
 
-func (self *transport) PeekInBatch(context_ context.Context, timeout time.Duration) ([][]byte, error) {
+func (self *transport) peekInBatch(context_ context.Context, timeout time.Duration) ([][]byte, error) {
 	packet, e := self.doPeek(context_, timeout)
 
 	if e != nil {
@@ -127,7 +139,11 @@ func (self *transport) PeekInBatch(context_ context.Context, timeout time.Durati
 	return packetPayloads, nil
 }
 
-func (self *transport) SkipInBatch(packetPayloads [][]byte) {
+func (self *transport) skipInBatch(packetPayloads [][]byte) error {
+	if self.isClosed() {
+		return TransportClosedError
+	}
+
 	totalPacketSize := 0
 
 	for _, packetPayload := range packetPayloads {
@@ -135,10 +151,11 @@ func (self *transport) SkipInBatch(packetPayloads [][]byte) {
 	}
 
 	self.inputByteStream.Skip(totalPacketSize)
+	return nil
 }
 
-func (self *transport) Write(callback func(*byte_stream.ByteStream) error) error {
-	if self.IsClosed() {
+func (self *transport) write(callback func(*byte_stream.ByteStream) error) error {
+	if self.isClosed() {
 		return TransportClosedError
 	}
 
@@ -165,8 +182,8 @@ func (self *transport) Write(callback func(*byte_stream.ByteStream) error) error
 	return nil
 }
 
-func (self *transport) Flush(context_ context.Context, timeout time.Duration) error {
-	if self.IsClosed() {
+func (self *transport) flush(context_ context.Context, timeout time.Duration) error {
+	if self.isClosed() {
 		return TransportClosedError
 	}
 
@@ -185,24 +202,24 @@ func (self *transport) Flush(context_ context.Context, timeout time.Duration) er
 	return e
 }
 
-func (self *transport) IsClosed() bool {
+func (self *transport) isClosed() bool {
 	return self.openness != 1
 }
 
-func (self *transport) initialize(policy *TransportPolicy, connection *net.TCPConn) {
+func (self *transport) initialize(policy *TransportPolicy, connection net.Conn) *transport {
 	if self.openness != 0 {
 		panic(errors.New("zk: transport already initialized"))
 	}
 
-	policy.Validate()
-	self.policy = policy
+	self.policy = policy.Validate()
 	self.connection = connection
 	self.inputByteStream.ReserveBuffer(int(policy.InitialReadBufferSize))
 	self.openness = 1
+	return self
 }
 
 func (self *transport) doPeek(context_ context.Context, timeout time.Duration) ([]byte, error) {
-	if self.IsClosed() {
+	if self.isClosed() {
 		return nil, TransportClosedError
 	}
 
@@ -244,7 +261,6 @@ func (self *transport) doPeek(context_ context.Context, timeout time.Duration) (
 	packetPayloadSize := int(binary.BigEndian.Uint32(packetHeader))
 
 	if packetPayloadSize > int(self.policy.MaxPacketPayloadSize) {
-		self.connection.CloseRead()
 		return nil, PacketPayloadTooLargeError
 	}
 

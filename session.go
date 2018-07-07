@@ -50,20 +50,30 @@ type SessionPolicy struct {
 	validateOnce                 sync.Once
 }
 
-func (self *SessionPolicy) Validate() {
+func (self *SessionPolicy) Validate() *SessionPolicy {
 	self.validateOnce.Do(func() {
-		if self.Timeout < minSessionTimeout {
-			self.Timeout = minSessionTimeout
-		} else if self.Timeout > maxSessionTimeout {
-			self.Timeout = maxSessionTimeout
+		if self.Timeout == 0 {
+			self.Timeout = defaultSessionTimeout
+		} else {
+			if self.Timeout < minSessionTimeout {
+				self.Timeout = minSessionTimeout
+			} else if self.Timeout > maxSessionTimeout {
+				self.Timeout = maxSessionTimeout
+			}
 		}
 
-		if self.MaxNumberOfPendingOperations < minMaxNumberOfPendingOperations {
-			self.MaxNumberOfPendingOperations = minMaxNumberOfPendingOperations
-		} else if self.MaxNumberOfPendingOperations > maxMaxNumberOfPendingOperations {
-			self.MaxNumberOfPendingOperations = maxMaxNumberOfPendingOperations
+		if self.MaxNumberOfPendingOperations == 0 {
+			self.MaxNumberOfPendingOperations = defaultMaxNumberOfPendingOperations
+		} else {
+			if self.MaxNumberOfPendingOperations < minMaxNumberOfPendingOperations {
+				self.MaxNumberOfPendingOperations = minMaxNumberOfPendingOperations
+			} else if self.MaxNumberOfPendingOperations > maxMaxNumberOfPendingOperations {
+				self.MaxNumberOfPendingOperations = maxMaxNumberOfPendingOperations
+			}
 		}
 	})
+
+	return self
 }
 
 type SessionListener struct {
@@ -189,8 +199,10 @@ type AuthInfo struct {
 var WatcherRemovedError = errors.New("zk: watcher removed")
 var SessionClosedError = errors.New("zk: session closed")
 
+const defaultSessionTimeout = 6 * time.Second
 const minSessionTimeout = 4 * time.Second
 const maxSessionTimeout = 40 * time.Second
+const defaultMaxNumberOfPendingOperations = 1 << 10
 const minMaxNumberOfPendingOperations = 1 << 4
 const maxMaxNumberOfPendingOperations = 1 << 16
 const protocolVersion = 0
@@ -209,19 +221,18 @@ type session struct {
 	id                int64
 	password          []byte
 	lastXid           int32
-	dequeOfOperations deque.Deque
 	transport         transport
+	dequeOfOperations deque.Deque
 	pendingOperations sync.Map
 	watchers          [3]map[string]map[*Watcher]struct{}
 }
 
-func (self *session) Initialize(policy *SessionPolicy) {
+func (self *session) initialize(policy *SessionPolicy) *session {
 	if self.state != 0 {
 		panic(errors.New("zk: session already initialized"))
 	}
 
-	policy.Validate()
-	self.policy = policy
+	self.policy = policy.Validate()
 	self.state = int32(SessionNotConnected)
 	self.timeout = policy.Timeout
 	self.password = []byte{}
@@ -230,14 +241,16 @@ func (self *session) Initialize(policy *SessionPolicy) {
 	for i := range self.watchers {
 		self.watchers[i] = map[string]map[*Watcher]struct{}{}
 	}
+
+	return self
 }
 
-func (self *session) Close() {
+func (self *session) close() {
 	self.setState(SessionEventNo, SessionClosed)
 }
 
-func (self *session) AddListener(maxNumberOfStateChanges int) (*SessionListener, error) {
-	if self.IsClosed() {
+func (self *session) addListener(maxNumberOfStateChanges int) (*SessionListener, error) {
+	if self.isClosed() {
 		return nil, SessionClosedError
 	}
 
@@ -247,7 +260,7 @@ func (self *session) AddListener(maxNumberOfStateChanges int) (*SessionListener,
 
 	self.lockOfListeners.Lock()
 
-	if self.IsClosed() {
+	if self.isClosed() {
 		self.lockOfListeners.Unlock()
 		return nil, SessionClosedError
 	}
@@ -261,15 +274,15 @@ func (self *session) AddListener(maxNumberOfStateChanges int) (*SessionListener,
 	return listener, nil
 }
 
-func (self *session) RemoveListener(listener *SessionListener) error {
-	if self.IsClosed() {
+func (self *session) removeListener(listener *SessionListener) error {
+	if self.isClosed() {
 		return SessionClosedError
 	}
 
 	close(listener.stateChanges)
 	self.lockOfListeners.Lock()
 
-	if self.IsClosed() {
+	if self.isClosed() {
 		self.lockOfListeners.Unlock()
 		return SessionClosedError
 	}
@@ -284,8 +297,13 @@ func (self *session) RemoveListener(listener *SessionListener) error {
 	return nil
 }
 
-func (self *session) Connect(context_ context.Context, serverAddress string, authInfos []AuthInfo) error {
-	self.policy.Logger.Infof("session connection: id=%#x, serverAddress=%#v", self.id, serverAddress)
+func (self *session) connect(context_ context.Context, serverAddress string, authInfos []AuthInfo) error {
+	if self.id == 0 {
+		self.policy.Logger.Infof("session connection: serverAddress=%#v", serverAddress)
+	} else {
+		self.policy.Logger.Infof("session connection: id=%#x, serverAddress=%#v", self.id, serverAddress)
+	}
+
 	var eventType SessionEventType
 
 	if self.getState() == SessionNotConnected {
@@ -317,10 +335,11 @@ func (self *session) Connect(context_ context.Context, serverAddress string, aut
 	}
 
 	self.setState(SessionEventConnected, SessionConnected)
+	self.policy.Logger.Infof("session establishment: serverAddress=%#v, id=%#x, timeout=%#v", serverAddress, self.id, self.timeout)
 	return nil
 }
 
-func (self *session) Dispatch(context_ context.Context) error {
+func (self *session) dispatch(context_ context.Context) error {
 	if state := self.getState(); state != SessionConnected {
 		panic(invalidSessionStateError{fmt.Sprintf("state=%#v", state)})
 	}
@@ -342,7 +361,7 @@ func (self *session) Dispatch(context_ context.Context) error {
 	return e
 }
 
-func (self *session) ExecuteOperation(
+func (self *session) executeOperation(
 	context_ context.Context,
 	opCode OpCode,
 	request interface{},
@@ -350,7 +369,7 @@ func (self *session) ExecuteOperation(
 	autoRetryOperation bool,
 	callback func(interface{}, ErrorCode),
 ) error {
-	if self.IsClosed() {
+	if self.isClosed() {
 		return Error{self.getErrorCode(), fmt.Sprintf("opCode=%#v, request=%#v", opCode, request)}
 	}
 
@@ -373,7 +392,7 @@ func (self *session) ExecuteOperation(
 	return nil
 }
 
-func (self *session) AddWatcher(watcherType WatcherType, path string) *Watcher {
+func (self *session) addWatcher(watcherType WatcherType, path string) *Watcher {
 	watcher := &Watcher{
 		type_: watcherType,
 		path:  path,
@@ -392,11 +411,11 @@ func (self *session) AddWatcher(watcherType WatcherType, path string) *Watcher {
 	return watcher
 }
 
-func (self *session) IsClosed() bool {
+func (self *session) isClosed() bool {
 	return self.getErrorCode() != 0
 }
 
-func (self *session) GetTimeout() time.Duration {
+func (self *session) getTimeout() time.Duration {
 	return self.timeout
 }
 
@@ -454,74 +473,8 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 	if errorCode != 0 {
 		operationsAreRetriable := errorCode == ErrorConnectionLoss
 
-		if errorCode2 := self.getErrorCode(); errorCode2 != 0 {
-			self.policy = nil
-			self.password = nil
-
-			{
-				self.lockOfListeners.Lock()
-				listeners := self.listeners
-				self.listeners = nil
-				self.lockOfListeners.Unlock()
-
-				for listener := range listeners {
-					close(listener.stateChanges)
-				}
-			}
-
-			{
-				var list_ list.List
-				list_.Initialize()
-				self.dequeOfOperations.Close(&list_)
-				getListNode := list_.GetNodes()
-
-				for listNode := getListNode(); listNode != nil; listNode = getListNode() {
-					operation_ := (*operation)(listNode.GetContainer(unsafe.Offsetof(operation{}.listNode)))
-					operation_.callback(nil, errorCode2)
-				}
-			}
-
-			{
-				if !self.transport.IsClosed() {
-					if self.id != 0 {
-						self.doClose(&self.transport)
-					}
-
-					self.transport.Close()
-				}
-			}
-
-			{
-				self.pendingOperations.Range(func(key interface{}, value interface{}) bool {
-					self.pendingOperations.Delete(key)
-					operation_ := value.(*operation)
-
-					if operationsAreRetriable && operation_.autoRetry {
-						operation_.callback(nil, errorCode2)
-					} else {
-						operation_.callback(nil, errorCode)
-					}
-
-					return true
-				})
-			}
-
-			{
-				watcherEvent := WatcherEvent{0, Error{errorCode2, ""}}
-
-				for watcherType, path2Watchers := range self.watchers {
-					self.watchers[watcherType] = nil
-
-					for _, watchers := range path2Watchers {
-						for watcher := range watchers {
-							watcher.fireEvent(watcherEvent)
-						}
-					}
-				}
-			}
-		} else {
-			var list_ list.List
-			list_.Initialize()
+		if errorCode2 := self.getErrorCode(); errorCode2 == 0 {
+			list_ := (&list.List{}).Initialize()
 			retriedOperationCount := int32(0)
 
 			self.pendingOperations.Range(func(key interface{}, value interface{}) bool {
@@ -538,7 +491,68 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 				return true
 			})
 
-			self.dequeOfOperations.DiscardNodeRemovals(&list_, retriedOperationCount)
+			self.dequeOfOperations.DiscardNodeRemovals(list_, retriedOperationCount)
+		} else {
+			self.policy = nil
+
+			{
+				self.lockOfListeners.Lock()
+				listeners := self.listeners
+				self.listeners = nil
+				self.lockOfListeners.Unlock()
+
+				for listener := range listeners {
+					close(listener.stateChanges)
+				}
+			}
+
+			self.password = nil
+
+			if !self.transport.isClosed() {
+				if self.id != 0 {
+					self.doClose(&self.transport)
+				}
+
+				self.transport.close()
+			}
+
+			{
+				list_ := (&list.List{}).Initialize()
+				self.dequeOfOperations.Close(list_)
+				getListNode := list_.GetNodes()
+
+				for listNode := getListNode(); listNode != nil; listNode = getListNode() {
+					operation_ := (*operation)(listNode.GetContainer(unsafe.Offsetof(operation{}.listNode)))
+					operation_.callback(nil, errorCode2)
+				}
+			}
+
+			self.pendingOperations.Range(func(key interface{}, value interface{}) bool {
+				self.pendingOperations.Delete(key)
+				operation_ := value.(*operation)
+
+				if operationsAreRetriable && operation_.autoRetry {
+					operation_.callback(nil, errorCode2)
+				} else {
+					operation_.callback(nil, errorCode)
+				}
+
+				return true
+			})
+
+			{
+				watcherEvent := WatcherEvent{0, Error{errorCode2, ""}}
+
+				for watcherType, path2Watchers := range self.watchers {
+					self.watchers[watcherType] = nil
+
+					for _, watchers := range path2Watchers {
+						for watcher := range watchers {
+							watcher.fireEvent(watcherEvent)
+						}
+					}
+				}
+			}
 		}
 	}
 }
@@ -546,16 +560,16 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 func (self *session) connectTransport(context_ context.Context, serverAddress string, callback func(*transport) error) error {
 	var transport_ transport
 
-	if e := transport_.Connect(context_, &self.policy.Transport, serverAddress); e != nil {
+	if e := transport_.connect(context_, &self.policy.Transport, serverAddress); e != nil {
 		return e
 	}
 
 	if e := callback(&transport_); e != nil {
-		transport_.Close()
+		transport_.close()
 		return e
 	}
 
-	self.transport.Close()
+	self.transport.close()
 	self.transport = transport_
 	return nil
 }
@@ -569,18 +583,18 @@ func (self *session) doConnect(context_ context.Context, transport_ *transport, 
 		Passwd:          self.password,
 	}
 
-	if e := transport_.Write(func(byteStream *byte_stream.ByteStream) error {
+	if e := transport_.write(func(byteStream *byte_stream.ByteStream) error {
 		serializeRecord(&request, byteStream)
 		return nil
 	}); e != nil {
 		return e
 	}
 
-	if e := transport_.Flush(context_, minSessionTimeout); e != nil {
+	if e := transport_.flush(context_, minSessionTimeout); e != nil {
 		return e
 	}
 
-	data, e := transport_.Peek(context_, minSessionTimeout)
+	data, e := transport_.peek(context_, minSessionTimeout)
 
 	if e != nil {
 		return e
@@ -593,7 +607,9 @@ func (self *session) doConnect(context_ context.Context, transport_ *transport, 
 		return e
 	}
 
-	transport_.Skip(data)
+	if e := transport_.skip(data); e != nil {
+		return e
+	}
 
 	if response.TimeOut < 1 {
 		self.setState(SessionEventExpired, SessionClosed)
@@ -620,14 +636,14 @@ func (self *session) doClose(transport_ *transport) error {
 		Type: OpCloseSession,
 	}
 
-	if e := transport_.Write(func(byteStream *byte_stream.ByteStream) error {
+	if e := transport_.write(func(byteStream *byte_stream.ByteStream) error {
 		serializeRecord(&requestHeader_, byteStream)
 		return nil
 	}); e != nil {
 		return e
 	}
 
-	if e := transport_.Flush(context.Background(), closeTimeoutOfSession); e != nil {
+	if e := transport_.flush(context.Background(), closeTimeoutOfSession); e != nil {
 		return e
 	}
 
@@ -644,7 +660,7 @@ func (self *session) authenticate(context_ context.Context, transport_ *transpor
 			Auth:   authInfo.Auth,
 		}
 
-		if _, e := self.executeOperation(
+		if _, e := self.executeOperationSync(
 			context_,
 			transport_,
 			0,
@@ -652,7 +668,7 @@ func (self *session) authenticate(context_ context.Context, transport_ *transpor
 			&request,
 			reflect.TypeOf(struct{}{}),
 		); e != nil {
-			if e, ok := e.(Error); ok && e.GetCode() == ErrorAuthFailed {
+			if e, ok := e.(Error); ok && e.code == ErrorAuthFailed {
 				self.setState(SessionEventAuthFailed, SessionAuthFailed)
 			}
 
@@ -712,7 +728,7 @@ func (self *session) rewatch(context_ context.Context, transport_ *transport) er
 	for i := range requests {
 		request := &requests[i]
 
-		if _, e := self.executeOperation(
+		if _, e := self.executeOperationSync(
 			context_,
 			transport_,
 			-8,
@@ -727,7 +743,7 @@ func (self *session) rewatch(context_ context.Context, transport_ *transport) er
 	return nil
 }
 
-func (self *session) executeOperation(
+func (self *session) executeOperationSync(
 	context_ context.Context,
 	transport_ *transport,
 	xid int32,
@@ -740,7 +756,7 @@ func (self *session) executeOperation(
 		Type: opCode,
 	}
 
-	if e := transport_.Write(func(byteStream *byte_stream.ByteStream) error {
+	if e := transport_.write(func(byteStream *byte_stream.ByteStream) error {
 		serializeRecord(&requestHeader_, byteStream)
 		serializeRecord(request, byteStream)
 		return nil
@@ -748,14 +764,14 @@ func (self *session) executeOperation(
 		return nil, e
 	}
 
-	if e := transport_.Flush(context_, minSessionTimeout); e != nil {
+	if e := transport_.flush(context_, minSessionTimeout); e != nil {
 		return nil, e
 	}
 
 	var replyHeader_ replyHeader
 
 	for {
-		data, e := transport_.Peek(context_, minSessionTimeout)
+		data, e := transport_.peek(context_, minSessionTimeout)
 
 		if e != nil {
 			return nil, e
@@ -786,7 +802,10 @@ func (self *session) executeOperation(
 				self.policy.Logger.Warningf("ignored reply: id=%#x, replyHeader=%#v", self.id, replyHeader_)
 			}
 
-			transport_.Skip(data)
+			if e := transport_.skip(data); e != nil {
+				return nil, e
+			}
+
 			continue
 		}
 
@@ -800,7 +819,10 @@ func (self *session) executeOperation(
 			return nil, e
 		}
 
-		transport_.Skip(data)
+		if e := transport_.skip(data); e != nil {
+			return nil, e
+		}
+
 		return response, nil
 	}
 }
@@ -833,13 +855,37 @@ func (self *session) fireWatcherEvent(watcherEventType WatcherEventType, path st
 }
 
 func (self *session) sendRequests(context_ context.Context) error {
-	var list_ list.List
-	list_.Initialize()
+	list_ := (&list.List{}).Initialize()
 
 	for {
 		context2, cancel := context.WithTimeout(context_, self.getMinPingInterval())
 
-		if _, e := self.dequeOfOperations.RemoveAllNodes(context2, false, &list_); e != nil {
+		if _, e := self.dequeOfOperations.RemoveAllNodes(context2, false, list_); e == nil {
+			cancel()
+			getListNode := list_.GetNodes()
+
+			for listNode := getListNode(); listNode != nil; listNode = getListNode() {
+				operation_ := (*operation)(listNode.GetContainer(unsafe.Offsetof(operation{}.listNode)))
+				xid := self.getXid()
+
+				requestHeader_ := requestHeader{
+					Xid:  xid,
+					Type: operation_.opCode,
+				}
+
+				if e := self.transport.write(func(byteStream *byte_stream.ByteStream) error {
+					serializeRecord(&requestHeader_, byteStream)
+					serializeRecord(operation_.request, byteStream)
+					return nil
+				}); e != nil {
+					return e
+				}
+
+				self.pendingOperations.Store(xid, operation_)
+			}
+
+			list_.Initialize()
+		} else {
 			cancel()
 
 			if e := context_.Err(); e != nil {
@@ -855,42 +901,17 @@ func (self *session) sendRequests(context_ context.Context) error {
 				Type: OpPing,
 			}
 
-			if e := self.transport.Write(func(byteStream *byte_stream.ByteStream) error {
+			if e := self.transport.write(func(byteStream *byte_stream.ByteStream) error {
 				serializeRecord(&requestHeader_, byteStream)
 				return nil
 			}); e != nil {
 				return e
 			}
-		} else {
-			cancel()
-			getListNode := list_.GetNodes()
-
-			for listNode := getListNode(); listNode != nil; listNode = getListNode() {
-				operation_ := (*operation)(listNode.GetContainer(unsafe.Offsetof(operation{}.listNode)))
-				xid := self.getXid()
-
-				requestHeader_ := requestHeader{
-					Xid:  xid,
-					Type: operation_.opCode,
-				}
-
-				if e := self.transport.Write(func(byteStream *byte_stream.ByteStream) error {
-					serializeRecord(&requestHeader_, byteStream)
-					serializeRecord(operation_.request, byteStream)
-					return nil
-				}); e != nil {
-					return e
-				}
-
-				self.pendingOperations.Store(xid, operation_)
-			}
-
-			list_.Initialize()
 		}
 
 		for {
-			if e := self.transport.Flush(context_, self.getMinPingInterval()); e != nil {
-				if e, ok := e.(net.Error); ok && e.Timeout() {
+			if e := self.transport.flush(context_, self.getMinPingInterval()); e != nil {
+				if e, ok := e.(*net.OpError); ok && e.Timeout() {
 					continue
 				}
 
@@ -911,10 +932,10 @@ func (self *session) receiveResponses(context_ context.Context) error {
 
 		for {
 			var e error
-			data, e = self.transport.PeekInBatch(context_, self.getMinPingInterval())
+			data, e = self.transport.peekInBatch(context_, self.getMinPingInterval())
 
 			if e != nil {
-				if e, ok := e.(net.Error); ok && e.Timeout() {
+				if e, ok := e.(*net.OpError); ok && e.Timeout() {
 					timeoutCount++
 
 					if timeoutCount == 2 {
@@ -985,7 +1006,10 @@ func (self *session) receiveResponses(context_ context.Context) error {
 		}
 
 		self.dequeOfOperations.CommitNodeRemovals(completedOperationCount)
-		self.transport.SkipInBatch(data)
+
+		if e := self.transport.skipInBatch(data); e != nil {
+			return e
+		}
 	}
 }
 
@@ -1038,7 +1062,7 @@ var watcherEventType2WatcherTypes = [...][]WatcherType{
 }
 
 var sessionState2ErrorCode = [...]ErrorCode{
-	SessionNo:           ErrorUnknownSession,
+	SessionNo:           ErrorSessionExpired,
 	SessionNotConnected: 0,
 	SessionConnecting:   0,
 	SessionConnected:    0,

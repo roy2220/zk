@@ -19,14 +19,17 @@ type lockBase struct {
 	ownerCount   int
 }
 
-func (self *lockBase) Initialize(client *zk.Client, path string) {
+func (self *lockBase) initialize(client *zk.Client, path string) *lockBase {
 	self.client = client
 	self.path = client.NormalizePath(path)
+	return self
 }
 
 func (self *lockBase) doAcquire(context_ context.Context, waiterNamePrefix string, priorWaiterLocator func([]string, string) int) error {
-	if e := context_.Err(); e != nil {
-		return e
+	if context_ != nil {
+		if e := context_.Err(); e != nil {
+			return e
+		}
 	}
 
 	self.mutex.Lock()
@@ -108,12 +111,16 @@ func (self *lockBase) doAcquire(context_ context.Context, waiterNamePrefix strin
 			if response == nil {
 				watcher.Remove()
 			} else {
-				select {
-				case <-watcher.Event():
-				case <-context_.Done():
-					self.client.Delete(nil, myWaiterPath, -1, true)
-					self.mutex.Unlock()
-					return context_.Err()
+				if context_ == nil {
+					<-watcher.Event()
+				} else {
+					select {
+					case <-watcher.Event():
+					case <-context_.Done():
+						self.client.Delete(nil, myWaiterPath, -1, true)
+						self.mutex.Unlock()
+						return context_.Err()
+					}
 				}
 			}
 

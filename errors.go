@@ -112,8 +112,10 @@ func (self Error) Error() string {
 	return result
 }
 
-func (self Error) GoString() string {
-	switch self.code {
+type ErrorCode int32
+
+func (self ErrorCode) GoString() string {
+	switch self {
 	case ErrorSystem:
 		return "<ErrorSystem>"
 	case ErrorRuntimeInconsistency:
@@ -169,8 +171,6 @@ func (self Error) GoString() string {
 	case ErrorReconfigDisabled:
 		return "<ErrorReconfigDisabled>"
 	default:
-		return fmt.Sprintf("<Error:%d>", self.code)
+		return fmt.Sprintf("<ErrorCode:%d>", self)
 	}
 }
-
-type ErrorCode int32
