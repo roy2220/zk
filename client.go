@@ -145,7 +145,6 @@ func (self *Client) Run() error {
 	self.serverAddresses.Collect()
 	self.authInfos = nil
 	self.defaultACL = nil
-	self.pathPrefix = ""
 	return e
 }
 

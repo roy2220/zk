@@ -254,15 +254,15 @@ func (self *session) addListener(maxNumberOfStateChanges int) (*SessionListener,
 		return nil, SessionClosedError
 	}
 
-	listener := &SessionListener{
-		stateChanges: make(chan SessionStateChange, maxNumberOfStateChanges),
-	}
-
 	self.lockOfListeners.Lock()
 
 	if self.isClosed() {
 		self.lockOfListeners.Unlock()
 		return nil, SessionClosedError
+	}
+
+	listener := &SessionListener{
+		stateChanges: make(chan SessionStateChange, maxNumberOfStateChanges),
 	}
 
 	if self.listeners == nil {
@@ -860,16 +860,16 @@ func (self *session) sendRequests(context_ context.Context) error {
 	for {
 		context2, cancel := context.WithTimeout(context_, self.getMinPingInterval())
 
-		if _, e := self.dequeOfOperations.RemoveAllNodes(context2, false, list_); e == nil {
+		if numberOfOperations, e := self.dequeOfOperations.RemoveAllNodes(context2, false, list_); e == nil {
 			cancel()
 			getListNode := list_.GetNodes()
 
 			for listNode := getListNode(); listNode != nil; listNode = getListNode() {
 				operation_ := (*operation)(listNode.GetContainer(unsafe.Offsetof(operation{}.listNode)))
-				xid := self.getXid()
+				operation_.xid = self.getXid()
 
 				requestHeader_ := requestHeader{
-					Xid:  xid,
+					Xid:  operation_.xid,
 					Type: operation_.opCode,
 				}
 
@@ -878,10 +878,16 @@ func (self *session) sendRequests(context_ context.Context) error {
 					serializeRecord(operation_.request, byteStream)
 					return nil
 				}); e != nil {
+					self.dequeOfOperations.DiscardNodeRemovals(list_, numberOfOperations)
 					return e
 				}
+			}
 
-				self.pendingOperations.Store(xid, operation_)
+			getListNode = list_.GetNodes()
+
+			for listNode := getListNode(); listNode != nil; listNode = getListNode() {
+				operation_ := (*operation)(listNode.GetContainer(unsafe.Offsetof(operation{}.listNode)))
+				self.pendingOperations.Store(operation_.xid, operation_)
 			}
 
 			list_.Initialize()
@@ -1032,6 +1038,7 @@ func (self *session) getXid() int32 {
 
 type operation struct {
 	listNode     list.ListNode
+	xid          int32
 	opCode       OpCode
 	request      interface{}
 	responseType reflect.Type
