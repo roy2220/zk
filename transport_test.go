@@ -26,7 +26,7 @@ func TestWriteAndReadTransport(t *testing.T) {
 
 	go func() {
 		var tp transport
-		e := tp.connect(nil, &TransportPolicy{}, la)
+		e := tp.connect(context.Background(), &TransportPolicy{}, la)
 
 		if e != nil {
 			t.Fatalf("%v", e)

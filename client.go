@@ -70,10 +70,6 @@ func (self *Client) Initialize(
 		self.pathPrefix = pathPrefix
 	}
 
-	if context_ == nil {
-		context_ = context.Background()
-	}
-
 	self.context, self.stop = context.WithCancel(context_)
 	return self
 }
@@ -507,19 +503,13 @@ func (self *Client) executeOperation(
 		return e
 	}
 
-	if context_ == nil {
-		if e := <-error_; e != nil {
+	select {
+	case e := <-error_:
+		if e != nil {
 			return e
 		}
-	} else {
-		select {
-		case e := <-error_:
-			if e != nil {
-				return e
-			}
-		case <-context_.Done():
-			return context_.Err()
-		}
+	case <-context_.Done():
+		return context_.Err()
 	}
 
 	return nil

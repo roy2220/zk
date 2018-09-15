@@ -15,19 +15,21 @@ import (
 func TestSharedLock(t *testing.T) {
 	var c1 zk.Client
 	var c2 zk.Client
-	c1.Initialize(sessionPolicy2, serverAddresses2, nil, nil, "/", nil)
-	c2.Initialize(sessionPolicy2, serverAddresses2, nil, nil, "/", nil)
+	c1.Initialize(sessionPolicy2, serverAddresses2, nil, nil, "/", context.Background())
+	c2.Initialize(sessionPolicy2, serverAddresses2, nil, nil, "/", context.Background())
 	var l1 SharedLock
 	var l2 SharedLock
 	l1.Initialize(&c1, "/locktest")
 	l2.Initialize(&c2, "/locktest")
 	var wg sync.WaitGroup
 	wg.Add(2)
+	var su sync.WaitGroup
+	su.Add(3)
 	s := int32(0)
 
 	go func() {
 		go func() {
-			if _, e := c1.Create(nil, "/locktest", []byte{}, nil, zk.CreatePersistent, true); e != nil {
+			if _, e := c1.Create(context.Background(), "/locktest", []byte{}, nil, zk.CreatePersistent, true); e != nil {
 				if e, ok := e.(zk.Error); !(ok && e.GetCode() == zk.ErrorNodeExists) {
 					t.Errorf("%v", e)
 					c1.Stop()
@@ -39,9 +41,12 @@ func TestSharedLock(t *testing.T) {
 
 			for i := 0; i < 3; i++ {
 				go func(i int) {
-					if e := l1.Acquire(nil); e != nil {
+					su.Done()
+
+					if e := l1.Acquire(context.Background()); e != nil {
 						t.Errorf("%v", e)
-						<-ch
+						ch <- i
+						return
 					}
 
 					atomic.AddInt32(&s, 1)
@@ -60,7 +65,6 @@ func TestSharedLock(t *testing.T) {
 				<-ch
 			}
 
-			c1.Delete(nil, "/locktest", -1, true)
 			c1.Stop()
 		}()
 
@@ -73,22 +77,16 @@ func TestSharedLock(t *testing.T) {
 
 	go func() {
 		go func() {
-			if _, e := c2.Create(nil, "/locktest", []byte{}, nil, zk.CreatePersistent, true); e != nil {
-				if e, ok := e.(zk.Error); !(ok && e.GetCode() == zk.ErrorNodeExists) {
-					t.Errorf("%v", e)
-					c2.Stop()
-					return
-				}
-			}
-
+			su.Wait()
 			ch := make(chan int)
 			time.Sleep(time.Second / 2)
 
 			for i := 3; i < 6; i++ {
 				go func(i int) {
-					if e := l2.Acquire(nil); e != nil {
+					if e := l2.Acquire(context.Background()); e != nil {
 						t.Errorf("%v", e)
-						<-ch
+						ch <- i
+						return
 					}
 
 					if s := atomic.AddInt32(&s, 1); s < 3 {
@@ -110,7 +108,7 @@ func TestSharedLock(t *testing.T) {
 				<-ch
 			}
 
-			c2.Delete(nil, "/locktest", -1, true)
+			c2.Delete(context.Background(), "/locktest", -1, true)
 			c2.Stop()
 		}()
 

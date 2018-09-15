@@ -26,10 +26,8 @@ func (self *lockBase) initialize(client *zk.Client, path string) *lockBase {
 }
 
 func (self *lockBase) doAcquire(context_ context.Context, waiterNamePrefix string, priorWaiterLocator func([]string, string) int) error {
-	if context_ != nil {
-		if e := context_.Err(); e != nil {
-			return e
-		}
+	if e := context_.Err(); e != nil {
+		return e
 	}
 
 	self.mutex.Lock()
@@ -48,11 +46,11 @@ func (self *lockBase) doAcquire(context_ context.Context, waiterNamePrefix strin
 		var waiterNames []string
 
 		for {
-			response, e := self.client.Create(nil, myWaiterPathPrefix, []byte{}, nil, zk.CreateEphemeralSequential, false)
+			response, e := self.client.Create(context.Background(), myWaiterPathPrefix, []byte{}, nil, zk.CreateEphemeralSequential, false)
 
 			if e == nil {
 				myWaiterPath = response.Path
-				response2, e := self.client.GetChildren(nil, self.path, true)
+				response2, e := self.client.GetChildren(context.Background(), self.path, true)
 
 				if e != nil {
 					self.mutex.Unlock()
@@ -68,7 +66,7 @@ func (self *lockBase) doAcquire(context_ context.Context, waiterNamePrefix strin
 				return e
 			}
 
-			response2, e := self.client.GetChildren(nil, self.path, true)
+			response2, e := self.client.GetChildren(context.Background(), self.path, true)
 
 			if e != nil {
 				self.mutex.Unlock()
@@ -101,7 +99,7 @@ func (self *lockBase) doAcquire(context_ context.Context, waiterNamePrefix strin
 			}
 
 			priorWaiterPath := self.path + "/" + waiterNames[i]
-			response, watcher, e := self.client.ExistsW(nil, priorWaiterPath, true)
+			response, watcher, e := self.client.ExistsW(context.Background(), priorWaiterPath, true)
 
 			if e != nil {
 				self.mutex.Unlock()
@@ -111,20 +109,16 @@ func (self *lockBase) doAcquire(context_ context.Context, waiterNamePrefix strin
 			if response == nil {
 				watcher.Remove()
 			} else {
-				if context_ == nil {
-					<-watcher.Event()
-				} else {
-					select {
-					case <-watcher.Event():
-					case <-context_.Done():
-						self.client.Delete(nil, myWaiterPath, -1, true)
-						self.mutex.Unlock()
-						return context_.Err()
-					}
+				select {
+				case <-watcher.Event():
+				case <-context_.Done():
+					self.client.Delete(context.Background(), myWaiterPath, -1, true)
+					self.mutex.Unlock()
+					return context_.Err()
 				}
 			}
 
-			response2, e := self.client.GetChildren(nil, self.path, true)
+			response2, e := self.client.GetChildren(context.Background(), self.path, true)
 
 			if e != nil {
 				self.mutex.Unlock()
@@ -151,7 +145,7 @@ func (self *lockBase) Release() error {
 	}
 
 	if self.ownerCount == 1 {
-		if e := self.client.Delete(nil, self.myWaiterPath, -1, true); e != nil {
+		if e := self.client.Delete(context.Background(), self.myWaiterPath, -1, true); e != nil {
 			self.mutex.Unlock()
 			return e
 		}
