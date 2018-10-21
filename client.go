@@ -104,11 +104,7 @@ func (self *Client) Run() error {
 
 		if e != nil {
 			if e != io.EOF {
-				if e == context.DeadlineExceeded {
-					break
-				}
-
-				if _, ok := e.(net.Error); !ok {
+				if _, ok := e.(*net.OpError); !ok {
 					break
 				}
 			}
@@ -121,11 +117,7 @@ func (self *Client) Run() error {
 
 		if e != nil {
 			if e != io.EOF {
-				if e == context.DeadlineExceeded {
-					break
-				}
-
-				if _, ok := e.(net.Error); !ok {
+				if _, ok := e.(*net.OpError); !ok {
 					break
 				}
 			}
