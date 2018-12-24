@@ -668,7 +668,7 @@ func (self *session) authenticate(context_ context.Context, transport_ *transpor
 			&request,
 			reflect.TypeOf(struct{}{}),
 		); e != nil {
-			if e, ok := e.(Error); ok && e.code == ErrorAuthFailed {
+			if e2, ok := e.(Error); ok && e2.code == ErrorAuthFailed {
 				self.setState(SessionEventAuthFailed, SessionAuthFailed)
 			}
 
@@ -917,7 +917,7 @@ func (self *session) sendRequests(context_ context.Context) error {
 
 		for {
 			if e := self.transport.flush(context_, self.getMinPingInterval()); e != nil {
-				if e, ok := e.(*net.OpError); ok && e.Timeout() {
+				if e2, ok := e.(*net.OpError); ok && e2.Timeout() {
 					continue
 				}
 
@@ -941,7 +941,7 @@ func (self *session) receiveResponses(context_ context.Context) error {
 			data, e = self.transport.peekInBatch(context_, self.getMinPingInterval())
 
 			if e != nil {
-				if e, ok := e.(*net.OpError); ok && e.Timeout() {
+				if e2, ok := e.(*net.OpError); ok && e2.Timeout() {
 					timeoutCount++
 
 					if timeoutCount == 2 {
