@@ -476,6 +476,7 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 		if errorCode2 := self.getErrorCode(); errorCode2 == 0 {
 			list_ := (&list.List{}).Initialize()
 			retriedOperationCount := int32(0)
+			completedOperationCount := int32(0)
 
 			self.pendingOperations.Range(func(key interface{}, value interface{}) bool {
 				self.pendingOperations.Delete(key)
@@ -486,12 +487,14 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 					retriedOperationCount++
 				} else {
 					operation_.callback(nil, errorCode)
+					completedOperationCount++
 				}
 
 				return true
 			})
 
 			self.dequeOfOperations.DiscardNodeRemovals(list_, retriedOperationCount)
+			self.dequeOfOperations.CommitNodeRemovals(completedOperationCount)
 		} else {
 			self.policy = nil
 
@@ -972,7 +975,6 @@ func (self *session) receiveResponses(context_ context.Context) error {
 
 			if value, ok := self.pendingOperations.Load(replyHeader_.Xid); ok {
 				self.pendingOperations.Delete(replyHeader_.Xid)
-				completedOperationCount++
 				operation_ := value.(*operation)
 
 				if replyHeader_.Err == 0 {
@@ -990,6 +992,8 @@ func (self *session) receiveResponses(context_ context.Context) error {
 				} else {
 					operation_.callback(nil, replyHeader_.Err)
 				}
+
+				completedOperationCount++
 			} else {
 				switch replyHeader_.Xid {
 				case -1: // -1 means notification
