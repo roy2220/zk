@@ -130,7 +130,7 @@ func (self *Client) Run() error {
 		self.session.close()
 	}
 
-	self.serverAddresses.Collect()
+	self.serverAddresses.GC()
 	self.authInfos = nil
 	self.defaultACL = nil
 	return e
