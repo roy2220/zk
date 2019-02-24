@@ -46,8 +46,9 @@ type SessionPolicy struct {
 	Logger                       logger.Logger
 	Timeout                      time.Duration
 	MaxNumberOfPendingOperations int32
-	Transport                    TransportPolicy
-	validateOnce                 sync.Once
+	Transport                    *TransportPolicy
+
+	validateOnce sync.Once
 }
 
 func (self *SessionPolicy) Validate() *SessionPolicy {
@@ -70,6 +71,10 @@ func (self *SessionPolicy) Validate() *SessionPolicy {
 			} else if self.MaxNumberOfPendingOperations > maxMaxNumberOfPendingOperations {
 				self.MaxNumberOfPendingOperations = maxMaxNumberOfPendingOperations
 			}
+		}
+
+		if self.Transport == nil {
+			self.Transport = &defaultTransportPolicy
 		}
 	})
 
@@ -563,7 +568,7 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 func (self *session) connectTransport(context_ context.Context, serverAddress string, callback func(*transport) error) error {
 	var transport_ transport
 
-	if e := transport_.connect(context_, &self.policy.Transport, serverAddress); e != nil {
+	if e := transport_.connect(context_, self.policy.Transport, serverAddress); e != nil {
 		return e
 	}
 
@@ -1063,6 +1068,8 @@ func (self invalidSessionStateError) Error() string {
 
 	return result
 }
+
+var defaultTransportPolicy TransportPolicy
 
 var watcherEventType2WatcherTypes = [...][]WatcherType{
 	WatcherEventNone:                nil,
