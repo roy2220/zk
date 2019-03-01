@@ -16,8 +16,6 @@ type Client struct {
 	authInfos       []AuthInfo
 	defaultACL      []ACL
 	pathPrefix      string
-	context         context.Context
-	stop            context.CancelFunc
 }
 
 func (self *Client) Initialize(
@@ -26,7 +24,6 @@ func (self *Client) Initialize(
 	authInfos []AuthInfo,
 	defaultACL []ACL,
 	pathPrefix string,
-	context_ context.Context,
 ) *Client {
 	self.session.initialize(sessionPolicy)
 
@@ -70,7 +67,6 @@ func (self *Client) Initialize(
 		self.pathPrefix = pathPrefix
 	}
 
-	self.context, self.stop = context.WithCancel(context_)
 	return self
 }
 
@@ -82,7 +78,7 @@ func (self *Client) RemoveSessionListener(sessionListener *SessionListener) erro
 	return self.session.removeListener(sessionListener)
 }
 
-func (self *Client) Run() error {
+func (self *Client) Run(context_ context.Context) error {
 	if self.session.isClosed() {
 		return nil
 	}
@@ -91,16 +87,16 @@ func (self *Client) Run() error {
 
 	for {
 		var value interface{}
-		value, e = self.serverAddresses.GetValue(self.context)
+		value, e = self.serverAddresses.GetValue(context_)
 
 		if e != nil {
 			break
 		}
 
-		context_, cancel := context.WithDeadline(self.context, self.serverAddresses.WhenNextValueUsable())
+		context2, cancel2 := context.WithDeadline(context_, self.serverAddresses.WhenNextValueUsable())
 		serverAddress := value.(string)
-		e = self.session.connect(context_, serverAddress, self.authInfos)
-		cancel()
+		e = self.session.connect(context2, serverAddress, self.authInfos)
+		cancel2()
 
 		if e != nil {
 			if e != io.EOF {
@@ -113,7 +109,7 @@ func (self *Client) Run() error {
 		}
 
 		self.serverAddresses.Reset(nil, 9, self.session.getTimeout())
-		e = self.session.dispatch(self.context)
+		e = self.session.dispatch(context_)
 
 		if e != nil {
 			if e != io.EOF {
@@ -134,12 +130,6 @@ func (self *Client) Run() error {
 	self.authInfos = nil
 	self.defaultACL = nil
 	return e
-}
-
-func (self *Client) Stop() {
-	if self.stop != nil {
-		self.stop()
-	}
 }
 
 func (self *Client) NormalizePath(path string) string {

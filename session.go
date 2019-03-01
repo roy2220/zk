@@ -349,7 +349,7 @@ func (self *session) dispatch(context_ context.Context) error {
 		panic(invalidSessionStateError{fmt.Sprintf("state=%#v", state)})
 	}
 
-	context2, cancel := context.WithCancel(context_)
+	context2, cancel2 := context.WithCancel(context_)
 	errors_ := make(chan error, 2)
 
 	go func() {
@@ -361,7 +361,7 @@ func (self *session) dispatch(context_ context.Context) error {
 	}()
 
 	e := <-errors_
-	cancel()
+	cancel2()
 	<-errors_
 	return e
 }
@@ -866,10 +866,10 @@ func (self *session) sendRequests(context_ context.Context) error {
 	list_ := (&list.List{}).Initialize()
 
 	for {
-		context2, cancel := context.WithTimeout(context_, self.getMinPingInterval())
+		context2, cancel2 := context.WithTimeout(context_, self.getMinPingInterval())
 
 		if numberOfOperations, e := self.dequeOfOperations.RemoveAllNodes(context2, false, list_); e == nil {
-			cancel()
+			cancel2()
 			getListNode := list_.GetNodes()
 
 			for listNode := getListNode(); listNode != nil; listNode = getListNode() {
@@ -900,7 +900,7 @@ func (self *session) sendRequests(context_ context.Context) error {
 
 			list_.Initialize()
 		} else {
-			cancel()
+			cancel2()
 
 			if e := context_.Err(); e != nil {
 				return e

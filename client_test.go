@@ -14,24 +14,26 @@ import (
 func TestClient1(t *testing.T) {
 	{
 		var c Client
-		c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/", context.Background())
-		c.Stop()
+		c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
 
-		if e := c.Run(); e != context.Canceled {
+		if e := c.Run(ctx); e != context.Canceled {
 			t.Errorf("%v", e)
 		}
 	}
 
 	{
 		var c Client
-		c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/", context.Background())
+		c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
+		ctx, cancel := context.WithCancel(context.Background())
 
 		go func() {
 			time.Sleep(time.Second / 2)
-			c.Stop()
+			cancel()
 		}()
 
-		if e := c.Run(); e != context.Canceled {
+		if e := c.Run(ctx); e != context.Canceled {
 			t.Errorf("%v", e)
 		}
 	}
@@ -40,10 +42,10 @@ func TestClient1(t *testing.T) {
 func TestClient2(t *testing.T) {
 	{
 		var c Client
+		c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
 		ctx, cancel := context.WithTimeout(context.Background(), 0)
-		c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/", ctx)
 
-		if e := c.Run(); e != context.DeadlineExceeded {
+		if e := c.Run(ctx); e != context.DeadlineExceeded {
 			t.Errorf("%v", e)
 		}
 
@@ -52,10 +54,10 @@ func TestClient2(t *testing.T) {
 
 	{
 		var c Client
+		c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second/2)
-		c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/", ctx)
 
-		if e := c.Run(); e != context.DeadlineExceeded {
+		if e := c.Run(ctx); e != context.DeadlineExceeded {
 			t.Errorf("%v", e)
 		}
 
@@ -65,7 +67,8 @@ func TestClient2(t *testing.T) {
 
 func TestClientCreateAndDelete(t *testing.T) {
 	var c Client
-	c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/", context.Background())
+	c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
+	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
 		{
@@ -88,17 +91,18 @@ func TestClientCreateAndDelete(t *testing.T) {
 			}
 		}
 
-		c.Stop()
+		cancel()
 	}()
 
-	if e := c.Run(); e != context.Canceled {
+	if e := c.Run(ctx); e != context.Canceled {
 		t.Errorf("%v", e)
 	}
 }
 
 func TestClientExists(t *testing.T) {
 	var c Client
-	c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/", context.Background())
+	c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
+	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
 		rsp, w, e := c.ExistsW(context.Background(), "foo", true)
@@ -157,10 +161,10 @@ func TestClientExists(t *testing.T) {
 			t.Errorf("%#v", ev)
 		}
 
-		c.Stop()
+		cancel()
 	}()
 
-	if e := c.Run(); e != context.Canceled {
+	if e := c.Run(ctx); e != context.Canceled {
 		t.Errorf("%v", e)
 	}
 }
@@ -168,7 +172,8 @@ func TestClientExists(t *testing.T) {
 func TestClientGetSetACL(t *testing.T) {
 	var c Client
 	c.Initialize(sessionPolicy, serverAddresses,
-		[]AuthInfo{AuthInfo{"digest", []byte("test:123")}}, []ACL{CreatorAllACL}, "/", context.Background())
+		[]AuthInfo{AuthInfo{"digest", []byte("test:123")}}, []ACL{CreatorAllACL}, "/")
+	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
 		_, e := c.Create(context.Background(), "foo", []byte("bar"), nil, CreatePersistent, true)
@@ -224,17 +229,18 @@ func TestClientGetSetACL(t *testing.T) {
 		}
 
 		c.Delete(context.Background(), "foo", -1, true)
-		c.Stop()
+		cancel()
 	}()
 
-	if e := c.Run(); e != context.Canceled {
+	if e := c.Run(ctx); e != context.Canceled {
 		t.Errorf("%v", e)
 	}
 }
 
 func TestClientGetChildren(t *testing.T) {
 	var c Client
-	c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/", context.Background())
+	c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
+	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
 		_, e := c.Create(context.Background(), "foo", []byte("bar"), nil, CreatePersistent, true)
@@ -300,17 +306,18 @@ func TestClientGetChildren(t *testing.T) {
 		}
 
 		c.Delete(context.Background(), "foo", -1, true)
-		c.Stop()
+		cancel()
 	}()
 
-	if e := c.Run(); e != context.Canceled {
+	if e := c.Run(ctx); e != context.Canceled {
 		t.Errorf("%v", e)
 	}
 }
 
 func TestClientGetSetData(t *testing.T) {
 	var c Client
-	c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/", context.Background())
+	c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
+	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
 		_, e := c.Create(context.Background(), "foo", []byte("bar"), nil, CreatePersistent, true)
@@ -375,17 +382,18 @@ func TestClientGetSetData(t *testing.T) {
 			t.Errorf("%#v", ev)
 		}
 
-		c.Stop()
+		cancel()
 	}()
 
-	if e := c.Run(); e != context.Canceled {
+	if e := c.Run(ctx); e != context.Canceled {
 		t.Errorf("%v", e)
 	}
 }
 
 func TestClientSync(t *testing.T) {
 	var c Client
-	c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/", context.Background())
+	c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
+	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
 		rsp, e := c.Sync(context.Background(), "/", true)
@@ -398,17 +406,18 @@ func TestClientSync(t *testing.T) {
 			t.Errorf("%#v", rsp)
 		}
 
-		c.Stop()
+		cancel()
 	}()
 
-	if e := c.Run(); e != context.Canceled {
+	if e := c.Run(ctx); e != context.Canceled {
 		t.Errorf("%v", e)
 	}
 }
 
 func TestClientMulti(t *testing.T) {
 	var c Client
-	c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/", context.Background())
+	c.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
+	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
 		ops := []Op{
@@ -432,10 +441,10 @@ func TestClientMulti(t *testing.T) {
 			}
 		}
 
-		c.Stop()
+		cancel()
 	}()
 
-	if e := c.Run(); e != context.Canceled {
+	if e := c.Run(ctx); e != context.Canceled {
 		t.Errorf("%v", e)
 	}
 }
@@ -447,7 +456,8 @@ func BenchmarkClient(b *testing.B) {
 
 	sp.Logger.Initialize("zktest", logger.SeverityInfo, os.Stdout, os.Stderr)
 	var c Client
-	c.Initialize(sp, serverAddresses, nil, nil, "/", context.Background())
+	c.Initialize(sp, serverAddresses, nil, nil, "/")
+	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
 		wg := sync.WaitGroup{}
@@ -471,10 +481,10 @@ func BenchmarkClient(b *testing.B) {
 		}
 
 		wg.Wait()
-		c.Stop()
+		cancel()
 	}()
 
-	if e := c.Run(); e != context.Canceled {
+	if e := c.Run(ctx); e != context.Canceled {
 		b.Errorf("%v", e)
 	}
 }
