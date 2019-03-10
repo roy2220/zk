@@ -15,8 +15,8 @@ import (
 func TestLock(t *testing.T) {
 	var c1 zk.Client
 	var c2 zk.Client
-	c1.Initialize(sessionPolicy, serverAddresses, nil, nil, "/", context.Background())
-	c2.Initialize(sessionPolicy, serverAddresses, nil, nil, "/", context.Background())
+	c1.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
+	c2.Initialize(sessionPolicy, serverAddresses, nil, nil, "/")
 	var l1 Lock
 	var l2 Lock
 	l1.Initialize(&c1, "/locktest")
@@ -29,11 +29,13 @@ func TestLock(t *testing.T) {
 	s2 := int32(0)
 
 	go func() {
+		ctx, cancel := context.WithCancel(context.Background())
+
 		go func() {
-			if _, e := c1.Create(context.Background(), "/locktest", []byte{}, nil, zk.CreatePersistent, true); e != nil {
+			if _, e := c1.Create(context.Background(), "/locktest", nil, nil, zk.CreatePersistent, true); e != nil {
 				if e, ok := e.(zk.Error); !(ok && e.GetCode() == zk.ErrorNodeExists) {
 					t.Errorf("%v", e)
-					c1.Stop()
+					cancel()
 					return
 				}
 			}
@@ -69,10 +71,10 @@ func TestLock(t *testing.T) {
 				<-ch
 			}
 
-			c1.Stop()
+			cancel()
 		}()
 
-		if e := c1.Run(); e != context.Canceled {
+		if e := c1.Run(ctx); e != context.Canceled {
 			t.Errorf("%v", e)
 		}
 
@@ -80,6 +82,8 @@ func TestLock(t *testing.T) {
 	}()
 
 	go func() {
+		ctx, cancel := context.WithCancel(context.Background())
+
 		go func() {
 			su.Wait()
 			ch := make(chan int)
@@ -117,10 +121,10 @@ func TestLock(t *testing.T) {
 			}
 
 			c2.Delete(context.Background(), "/locktest", -1, true)
-			c2.Stop()
+			cancel()
 		}()
 
-		if e := c2.Run(); e != context.Canceled {
+		if e := c2.Run(ctx); e != context.Canceled {
 			t.Errorf("%v", e)
 		}
 

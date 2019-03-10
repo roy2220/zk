@@ -35,10 +35,6 @@ func serializeRecord(record interface{}, byteStream *byte_stream.ByteStream) {
 	rvalue := reflect.ValueOf(record)
 
 	if rvalue.Kind() == reflect.Ptr {
-		if rvalue.IsNil() {
-			panic(recordSerializationError{"record=<nil>"})
-		}
-
 		rvalue = rvalue.Elem()
 	}
 
@@ -50,17 +46,13 @@ func serializeRecord(record interface{}, byteStream *byte_stream.ByteStream) {
 }
 
 func deserializeRecord(record interface{}, data []byte, dataOffset *int) error {
-	lvalue := reflect.ValueOf(record)
+	temp := reflect.ValueOf(record)
 
-	if lvalue.Kind() != reflect.Ptr {
+	if temp.Kind() != reflect.Ptr {
 		panic(RecordDeserializationError{fmt.Sprintf("recordType=%T", record)})
 	}
 
-	if lvalue.IsNil() {
-		panic(RecordDeserializationError{"record=<nil>"})
-	}
-
-	lvalue = lvalue.Elem()
+	lvalue := temp.Elem()
 
 	if lvalue.Kind() != reflect.Struct {
 		panic(RecordDeserializationError{fmt.Sprintf("recordType=%T", record)})
@@ -201,13 +193,9 @@ func deserializeLen(data []byte, dataOffset *int) (int, error) {
 }
 
 func doSerializeBuffer(rvalue reflect.Value, byteStream *byte_stream.ByteStream) {
-	if rvalue.IsNil() {
-		serializeLen(-1, byteStream)
-	} else {
-		bytes := rvalue.Bytes()
-		serializeLen(len(bytes), byteStream)
-		byteStream.Write(bytes)
-	}
+	bytes := rvalue.Bytes()
+	serializeLen(len(bytes), byteStream)
+	byteStream.Write(bytes)
 }
 
 func doDeserializeBuffer(lvalue reflect.Value, data []byte, dataOffset *int) error {
@@ -217,7 +205,7 @@ func doDeserializeBuffer(lvalue reflect.Value, data []byte, dataOffset *int) err
 		return e
 	}
 
-	if numberOfBytes < 0 {
+	if numberOfBytes < 1 {
 		lvalue.SetBytes(nil)
 	} else {
 		nextDataOffset := *dataOffset + numberOfBytes
@@ -246,31 +234,28 @@ func doDeserializeString(lvalue reflect.Value, data []byte, dataOffset *int) err
 		return e
 	}
 
-	if numberOfBytes < 0 {
-		return RecordDeserializationError{"string=<nil>"}
+	if numberOfBytes < 1 {
+		lvalue.SetString("")
+	} else {
+		nextDataOffset := *dataOffset + numberOfBytes
+
+		if nextDataOffset > len(data) {
+			return RecordDeserializationError{fmt.Sprintf("dataSize=%#v, nextDataOffset=%#v", len(data), nextDataOffset)}
+		}
+
+		lvalue.SetString(string(data[*dataOffset:nextDataOffset]))
+		*dataOffset = nextDataOffset
 	}
 
-	nextDataOffset := *dataOffset + numberOfBytes
-
-	if nextDataOffset > len(data) {
-		return RecordDeserializationError{fmt.Sprintf("dataSize=%#v, nextDataOffset=%#v", len(data), nextDataOffset)}
-	}
-
-	lvalue.SetString(string(data[*dataOffset:nextDataOffset]))
-	*dataOffset = nextDataOffset
 	return nil
 }
 
 func doSerializeVector(rvalue reflect.Value, byteStream *byte_stream.ByteStream) {
-	if rvalue.IsNil() {
-		serializeLen(-1, byteStream)
-	} else {
-		numberOfElements := rvalue.Len()
-		serializeLen(numberOfElements, byteStream)
+	numberOfElements := rvalue.Len()
+	serializeLen(numberOfElements, byteStream)
 
-		for i := 0; i < numberOfElements; i++ {
-			doSerializeValue(rvalue.Index(i), byteStream)
-		}
+	for i := 0; i < numberOfElements; i++ {
+		doSerializeValue(rvalue.Index(i), byteStream)
 	}
 }
 
@@ -281,7 +266,7 @@ func doDeserializeVector(lvalue reflect.Value, data []byte, dataOffset *int) err
 		return e
 	}
 
-	if numberOfElements < 0 {
+	if numberOfElements < 1 {
 		lvalue.Set(reflect.Zero(lvalue.Type()))
 	} else {
 		lvalue.Set(reflect.MakeSlice(lvalue.Type(), numberOfElements, numberOfElements))

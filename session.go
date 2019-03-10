@@ -240,7 +240,7 @@ func (self *session) initialize(policy *SessionPolicy) *session {
 	self.policy = policy.Validate()
 	self.state = int32(SessionNotConnected)
 	self.timeout = policy.Timeout
-	self.password = []byte{}
+	self.password = nil
 	self.dequeOfOperations.Initialize(policy.MaxNumberOfPendingOperations)
 
 	for i := range self.watchers {
@@ -688,8 +688,8 @@ func (self *session) authenticate(context_ context.Context, transport_ *transpor
 }
 
 func (self *session) rewatch(context_ context.Context, transport_ *transport) error {
-	requests := []setWatches{}
-	paths := [...][]string{[]string{}, []string{}, []string{}}
+	requests := []setWatches(nil)
+	paths := [...][]string{nil, nil, nil}
 	requestSize := setWatchesOverheadSize
 
 	for watcherType, path2Watchers := range self.watchers {
@@ -715,7 +715,7 @@ func (self *session) rewatch(context_ context.Context, transport_ *transport) er
 					ChildWatches: paths[WatcherChild],
 				})
 
-				paths = [...][]string{[]string{}, []string{}, []string{}}
+				paths = [...][]string{nil, nil, nil}
 				requestSize = setWatchesOverheadSize
 			}
 
@@ -990,7 +990,7 @@ func (self *session) receiveResponses(context_ context.Context) error {
 					}
 
 					if extraDataSize := len(data2) - dataOffset; extraDataSize >= 1 {
-						self.policy.Logger.Warningf("extra data of response: id=%#x, responseType=%v, extraDataSize=%v", self.id, operation_.responseType, extraDataSize)
+						self.policy.Logger.Warningf("extra data of response: id=%#x, responseType=%v, extraDataSize=%#v", self.id, operation_.responseType, extraDataSize)
 					}
 
 					operation_.callback(response, 0)
@@ -1009,7 +1009,7 @@ func (self *session) receiveResponses(context_ context.Context) error {
 					}
 
 					if extraDataSize := len(data2) - dataOffset; extraDataSize >= 1 {
-						self.policy.Logger.Warningf("extra data of watcher event: id=%#x, extraDataSize=%v", self.id, extraDataSize)
+						self.policy.Logger.Warningf("extra data of watcher event: id=%#x, extraDataSize=%#v", self.id, extraDataSize)
 					}
 
 					self.fireWatcherEvent(watcherEvent_.Type, watcherEvent_.Path)

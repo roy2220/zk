@@ -46,7 +46,7 @@ func (self *lockBase) doAcquire(context_ context.Context, waiterNamePrefix strin
 		var waiterNames []string
 
 		for {
-			response, e := self.client.Create(context.Background(), myWaiterPathPrefix, []byte{}, nil, zk.CreateEphemeralSequential, false)
+			response, e := self.client.Create(context.Background(), myWaiterPathPrefix, nil, nil, zk.CreateEphemeralSequential, false)
 
 			if e == nil {
 				myWaiterPath = response.Path

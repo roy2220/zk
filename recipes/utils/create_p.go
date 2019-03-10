@@ -12,7 +12,7 @@ func CreateP(client *zk.Client, context_ context.Context, path string) error {
 
 	doCreateP = func(path string) error {
 		for {
-			_, e := client.Create(context_, path, []byte{}, nil, zk.CreatePersistent, true)
+			_, e := client.Create(context_, path, nil, nil, zk.CreatePersistent, true)
 
 			if e == nil {
 				return nil
