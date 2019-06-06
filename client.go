@@ -466,7 +466,7 @@ func (self *Client) executeOperation(
 
 	callbackWrapper := func(value interface{}, errorCode ErrorCode) {
 		if errorCode != 0 && errorCode != tolerableErrorCode {
-			error_ <- Error{errorCode, fmt.Sprintf("opCode=%#v, request=%#v", opCode, request)}
+			error_ <- &Error{errorCode, fmt.Sprintf("opCode=%#v, request=%#v", opCode, request)}
 			return
 		}
 

@@ -18,7 +18,7 @@ func CreateP(client *zk.Client, context_ context.Context, path string) error {
 				return nil
 			}
 
-			e2, ok := e.(zk.Error)
+			e2, ok := e.(*zk.Error)
 
 			if !ok {
 				return e

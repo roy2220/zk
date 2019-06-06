@@ -125,7 +125,7 @@ func TestSerializeRecord(t *testing.T) {
 		}
 
 		switch r.(type) {
-		case recordSerializationError:
+		case *recordSerializationError:
 		default:
 			t.Errorf("%#v", r)
 			debug.PrintStack()
@@ -146,7 +146,7 @@ func TestDeserializeRecord(t *testing.T) {
 		}
 
 		switch r.(type) {
-		case RecordDeserializationError:
+		case *RecordDeserializationError:
 		default:
 			t.Errorf("%#v", r)
 			debug.PrintStack()

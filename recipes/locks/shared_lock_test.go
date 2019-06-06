@@ -32,7 +32,7 @@ func TestSharedLock(t *testing.T) {
 
 		go func() {
 			if _, e := c1.Create(context.Background(), "/locktest", nil, nil, zk.CreatePersistent, true); e != nil {
-				if e, ok := e.(zk.Error); !(ok && e.GetCode() == zk.ErrorNodeExists) {
+				if e, ok := e.(*zk.Error); !(ok && e.GetCode() == zk.ErrorNodeExists) {
 					t.Errorf("%v", e)
 					cancel()
 					return

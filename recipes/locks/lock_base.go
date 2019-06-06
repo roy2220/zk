@@ -61,7 +61,7 @@ func (self *lockBase) doAcquire(context_ context.Context, waiterNamePrefix strin
 				break
 			}
 
-			if e2, ok := e.(zk.Error); !(ok && e2.GetCode() == zk.ErrorConnectionLoss) {
+			if e2, ok := e.(*zk.Error); !(ok && e2.GetCode() == zk.ErrorConnectionLoss) {
 				self.mutex.Unlock()
 				return e
 			}

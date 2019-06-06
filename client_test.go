@@ -121,7 +121,7 @@ func TestClientExists(t *testing.T) {
 			_, e := c.Create(context.Background(), "foo", []byte("bar"), nil, CreatePersistent, true)
 
 			if e != nil {
-				if e, ok := e.(Error); !ok || e.GetCode() != ErrorSessionExpired {
+				if e, ok := e.(*Error); !ok || e.GetCode() != ErrorSessionExpired {
 					t.Errorf("%v", e)
 				}
 			}
@@ -149,7 +149,7 @@ func TestClientExists(t *testing.T) {
 			e := c.Delete(context.Background(), "foo", -1, true)
 
 			if e != nil {
-				if e, ok := e.(Error); !ok || e.GetCode() != ErrorSessionExpired {
+				if e, ok := e.(*Error); !ok || e.GetCode() != ErrorSessionExpired {
 					t.Errorf("%v", e)
 				}
 			}
@@ -265,7 +265,7 @@ func TestClientGetChildren(t *testing.T) {
 			_, e := c.Create(context.Background(), "foo/son", []byte("son"), nil, CreatePersistent, true)
 
 			if e != nil {
-				if e, ok := e.(Error); !ok || e.GetCode() != ErrorSessionExpired {
+				if e, ok := e.(*Error); !ok || e.GetCode() != ErrorSessionExpired {
 					t.Errorf("%v", e)
 				}
 			}
@@ -293,7 +293,7 @@ func TestClientGetChildren(t *testing.T) {
 			e := c.Delete(context.Background(), "foo/son", -1, true)
 
 			if e != nil {
-				if e, ok := e.(Error); !ok || e.GetCode() != ErrorSessionExpired {
+				if e, ok := e.(*Error); !ok || e.GetCode() != ErrorSessionExpired {
 					t.Errorf("%v", e)
 				}
 			}
@@ -342,7 +342,7 @@ func TestClientGetSetData(t *testing.T) {
 			_, e := c.SetData(context.Background(), "foo", []byte("bar2"), -1, true)
 
 			if e != nil {
-				if e, ok := e.(Error); !ok || e.GetCode() != ErrorSessionExpired {
+				if e, ok := e.(*Error); !ok || e.GetCode() != ErrorSessionExpired {
 					t.Errorf("%v", e)
 				}
 			}
@@ -370,7 +370,7 @@ func TestClientGetSetData(t *testing.T) {
 			e := c.Delete(context.Background(), "foo", -1, true)
 
 			if e != nil {
-				if e, ok := e.(Error); !ok || e.GetCode() != ErrorSessionExpired {
+				if e, ok := e.(*Error); !ok || e.GetCode() != ErrorSessionExpired {
 					t.Errorf("%v", e)
 				}
 			}

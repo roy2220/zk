@@ -383,7 +383,7 @@ func (self *MultiResponse) Deserialize(data []byte, dataOffset *int) error {
 		case OpError:
 			response = &ErrorResponse{}
 		default:
-			return RecordDeserializationError{fmt.Sprintf("headerType=%#v", header.Type)}
+			return &RecordDeserializationError{fmt.Sprintf("headerType=%#v", header.Type)}
 		}
 
 		if e := deserializeRecord(response, data, dataOffset); e != nil {

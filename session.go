@@ -340,13 +340,13 @@ func (self *session) connect(context_ context.Context, serverAddress string, aut
 	}
 
 	self.setState(SessionEventConnected, SessionConnected)
-	self.policy.Logger.Infof("session establishment: serverAddress=%#v, id=%#x, timeout=%#v", serverAddress, self.id, self.timeout)
+	self.policy.Logger.Infof("session establishment: serverAddress=%#v, id=%#x, timeout=%#v", serverAddress, self.id, self.timeout/time.Millisecond)
 	return nil
 }
 
 func (self *session) dispatch(context_ context.Context) error {
 	if state := self.getState(); state != SessionConnected {
-		panic(invalidSessionStateError{fmt.Sprintf("state=%#v", state)})
+		panic(&invalidSessionStateError{fmt.Sprintf("state=%#v", state)})
 	}
 
 	context2, cancel2 := context.WithCancel(context_)
@@ -375,7 +375,7 @@ func (self *session) executeOperation(
 	callback func(interface{}, ErrorCode),
 ) error {
 	if self.isClosed() {
-		return Error{self.getErrorCode(), fmt.Sprintf("opCode=%#v, request=%#v", opCode, request)}
+		return &Error{self.getErrorCode(), fmt.Sprintf("opCode=%#v, request=%#v", opCode, request)}
 	}
 
 	operation_ := operation{
@@ -388,7 +388,7 @@ func (self *session) executeOperation(
 
 	if e := self.dequeOfOperations.AppendNode(context_, &operation_.listNode); e != nil {
 		if e == semaphore.SemaphoreClosedError {
-			e = Error{self.getErrorCode(), fmt.Sprintf("opCode=%#v, request=%#v", opCode, request)}
+			e = &Error{self.getErrorCode(), fmt.Sprintf("opCode=%#v, request=%#v", opCode, request)}
 		}
 
 		return e
@@ -433,7 +433,7 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 		switch newState {
 		case SessionConnecting:
 		default:
-			panic(invalidSessionStateError{fmt.Sprintf("oldState=%#v, newState=%#v", oldState, newState)})
+			panic(&invalidSessionStateError{fmt.Sprintf("oldState=%#v, newState=%#v", oldState, newState)})
 		}
 	case SessionConnecting:
 		switch newState {
@@ -449,7 +449,7 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 		case SessionAuthFailed:
 			errorCode = ErrorAuthFailed
 		default:
-			panic(invalidSessionStateError{fmt.Sprintf("oldState=%#v, newState=%#v", oldState, newState)})
+			panic(&invalidSessionStateError{fmt.Sprintf("oldState=%#v, newState=%#v", oldState, newState)})
 		}
 	case SessionConnected:
 		switch newState {
@@ -458,11 +458,11 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 		case SessionClosed:
 			errorCode = ErrorConnectionLoss
 		default:
-			panic(invalidSessionStateError{fmt.Sprintf("oldState=%#v, newState=%#v", oldState, newState)})
+			panic(&invalidSessionStateError{fmt.Sprintf("oldState=%#v, newState=%#v", oldState, newState)})
 
 		}
 	default:
-		panic(invalidSessionStateError{fmt.Sprintf("oldState=%#v, newState=%#v", oldState, newState)})
+		panic(&invalidSessionStateError{fmt.Sprintf("oldState=%#v, newState=%#v", oldState, newState)})
 	}
 
 	atomic.StoreInt32(&self.state, int32(newState))
@@ -549,7 +549,7 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 			})
 
 			{
-				watcherEvent := WatcherEvent{0, Error{errorCode2, ""}}
+				watcherEvent := WatcherEvent{0, &Error{errorCode2, ""}}
 
 				for watcherType, path2Watchers := range self.watchers {
 					self.watchers[watcherType] = nil
@@ -621,7 +621,7 @@ func (self *session) doConnect(context_ context.Context, transport_ *transport, 
 
 	if response.TimeOut < 1 {
 		self.setState(SessionEventExpired, SessionClosed)
-		return Error{ErrorSessionExpired, ""}
+		return &Error{ErrorSessionExpired, ""}
 	}
 
 	if e := callback(); e != nil {
@@ -676,7 +676,7 @@ func (self *session) authenticate(context_ context.Context, transport_ *transpor
 			&request,
 			reflect.TypeOf(struct{}{}),
 		); e != nil {
-			if e2, ok := e.(Error); ok && e2.code == ErrorAuthFailed {
+			if e2, ok := e.(*Error); ok && e2.code == ErrorAuthFailed {
 				self.setState(SessionEventAuthFailed, SessionAuthFailed)
 			}
 
@@ -818,7 +818,7 @@ func (self *session) executeOperationSync(
 		}
 
 		if replyHeader_.Err != 0 {
-			return nil, Error{replyHeader_.Err, fmt.Sprintf("opCode=%#v, request=%#v", opCode, request)}
+			return nil, &Error{replyHeader_.Err, fmt.Sprintf("opCode=%#v, request=%#v", opCode, request)}
 		}
 
 		response := reflect.New(responseType).Interface()

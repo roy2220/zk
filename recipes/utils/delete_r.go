@@ -18,7 +18,7 @@ func DeleteR(client *zk.Client, context_ context.Context, path string) error {
 				return nil
 			}
 
-			e2, ok := e.(zk.Error)
+			e2, ok := e.(*zk.Error)
 
 			if !ok {
 				return e
@@ -31,7 +31,7 @@ func DeleteR(client *zk.Client, context_ context.Context, path string) error {
 				response, e := client.GetChildren(context_, path, true)
 
 				if e != nil {
-					if e2, ok := e.(zk.Error); ok && e2.GetCode() == zk.ErrorNoNode {
+					if e2, ok := e.(*zk.Error); ok && e2.GetCode() == zk.ErrorNoNode {
 						return nil
 					} else {
 						return e
