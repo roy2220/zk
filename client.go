@@ -109,7 +109,7 @@ func (self *Client) Run(context_ context.Context) error {
 		}
 
 		self.serverAddresses.Reset(nil, 9, self.session.getTimeout())
-		e = self.session.dispatch(context_)
+		e = self.session.dispatch(context.WithCancel(context_))
 
 		if e != nil {
 			if e != io.EOF {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -344,25 +343,24 @@ func (self *session) connect(context_ context.Context, serverAddress string, aut
 	return nil
 }
 
-func (self *session) dispatch(context_ context.Context) error {
+func (self *session) dispatch(context_ context.Context, cancel context.CancelFunc) error {
 	if state := self.getState(); state != SessionConnected {
 		panic(&invalidSessionStateError{fmt.Sprintf("state=%#v", state)})
 	}
 
-	context2, cancel2 := context.WithCancel(context_)
-	errors_ := make(chan error, 2)
+	error_ := make(chan error, 1)
 
 	go func() {
-		errors_ <- self.sendRequests(context2)
+		error_ <- self.sendRequests(context_, cancel)
 	}()
 
-	go func() {
-		errors_ <- self.receiveResponses(context2)
-	}()
+	e := self.receiveResponses(context_)
+	cancel()
 
-	e := <-errors_
-	cancel2()
-	<-errors_
+	if e2 := <-error_; e2 != context_.Err() {
+		e = e2
+	}
+
 	return e
 }
 
@@ -862,15 +860,98 @@ func (self *session) fireWatcherEvent(watcherEventType WatcherEventType, path st
 	}
 }
 
-func (self *session) sendRequests(context_ context.Context) error {
-	list_ := (&list.List{}).Initialize()
+func (self *session) sendRequests(context_ context.Context, cancel context.CancelFunc) error {
+	error_ := make(chan error, 2)
+
+	type task struct {
+		list              *list.List
+		numberOfListNodes int32
+	}
+
+	tasks := make(chan task)
+
+	go func() {
+		list1 := (&list.List{}).Initialize()
+		list2 := (&list.List{}).Initialize()
+
+		for {
+			numberOfListNodes, e := self.dequeOfOperations.RemoveAllNodes(context_, false, list1)
+
+			if e != nil {
+				error_ <- e
+				return
+			}
+
+			select {
+			case tasks <- task{list1, numberOfListNodes}:
+			case <-context_.Done():
+				self.dequeOfOperations.DiscardNodeRemovals(list1, numberOfListNodes)
+				error_ <- context_.Err()
+				return
+			}
+
+			list1, list2 = list2, list1
+			list1.Initialize()
+		}
+	}()
+
+	var task_ task
+
+	cleanup := func(ok bool) {
+		if task_.list != nil {
+			if ok {
+				getListNode := task_.list.GetNodesSafely()
+
+				for listNode := getListNode(); listNode != nil; listNode = getListNode() {
+					listNode.Reset()
+					operation_ := (*operation)(listNode.GetContainer(unsafe.Offsetof(operation{}.listNode)))
+
+					if !operation_.autoRetry {
+						operation_.request = nil
+					}
+
+					self.pendingOperations.Store(operation_.xid, operation_)
+				}
+			} else {
+				self.dequeOfOperations.DiscardNodeRemovals(task_.list, task_.numberOfListNodes)
+			}
+		}
+
+		if !ok {
+			cancel()
+			<-error_
+		}
+	}
 
 	for {
-		context2, cancel2 := context.WithTimeout(context_, self.getMinPingInterval())
+		task_ = task{nil, 0}
 
-		if numberOfOperations, e := self.dequeOfOperations.RemoveAllNodes(context2, false, list_); e == nil {
-			cancel2()
-			getListNode := list_.GetNodes()
+		select {
+		case e := <-error_:
+			return e
+		case task_ = <-tasks:
+		case <-time.After(self.getMinPingInterval()):
+			select {
+			case task_ = <-tasks:
+			default:
+			}
+		}
+
+		if task_.list == nil {
+			requestHeader_ := requestHeader{
+				Xid:  -2,
+				Type: OpPing,
+			}
+
+			if e := self.transport.write(func(byteStream *byte_stream.ByteStream) error {
+				serializeRecord(&requestHeader_, byteStream)
+				return nil
+			}); e != nil {
+				cleanup(false)
+				return e
+			}
+		} else {
+			getListNode := task_.list.GetNodes()
 
 			for listNode := getListNode(); listNode != nil; listNode = getListNode() {
 				operation_ := (*operation)(listNode.GetContainer(unsafe.Offsetof(operation{}.listNode)))
@@ -886,53 +967,18 @@ func (self *session) sendRequests(context_ context.Context) error {
 					serializeRecord(operation_.request, byteStream)
 					return nil
 				}); e != nil {
-					self.dequeOfOperations.DiscardNodeRemovals(list_, numberOfOperations)
+					cleanup(false)
 					return e
 				}
 			}
-
-			getListNode = list_.GetNodes()
-
-			for listNode := getListNode(); listNode != nil; listNode = getListNode() {
-				operation_ := (*operation)(listNode.GetContainer(unsafe.Offsetof(operation{}.listNode)))
-				self.pendingOperations.Store(operation_.xid, operation_)
-			}
-
-			list_.Initialize()
-		} else {
-			cancel2()
-
-			if e := context_.Err(); e != nil {
-				return e
-			}
-
-			if e != context.DeadlineExceeded {
-				return e
-			}
-
-			requestHeader_ := requestHeader{
-				Xid:  -2,
-				Type: OpPing,
-			}
-
-			if e := self.transport.write(func(byteStream *byte_stream.ByteStream) error {
-				serializeRecord(&requestHeader_, byteStream)
-				return nil
-			}); e != nil {
-				return e
-			}
 		}
 
-		for {
-			if e := self.transport.flush(context_, self.getMinPingInterval()); e != nil {
-				if e2, ok := e.(*net.OpError); ok && e2.Timeout() {
-					continue
-				}
+		cleanup(true)
 
-				return e
-			}
-
-			break
+		if e := self.transport.flush(context_, 0); e != nil {
+			cancel()
+			<-error_
+			return e
 		}
 	}
 }
@@ -941,28 +987,10 @@ func (self *session) receiveResponses(context_ context.Context) error {
 	var replyHeader_ replyHeader
 
 	for {
-		timeoutCount := 0
-		var data [][]byte
+		data, e := self.transport.peekInBatch(context_, 2*self.getMinPingInterval())
 
-		for {
-			var e error
-			data, e = self.transport.peekInBatch(context_, self.getMinPingInterval())
-
-			if e != nil {
-				if e2, ok := e.(*net.OpError); ok && e2.Timeout() {
-					timeoutCount++
-
-					if timeoutCount == 2 {
-						return e
-					}
-
-					continue
-				}
-
-				return e
-			}
-
-			break
+		if e != nil {
+			return e
 		}
 
 		completedOperationCount := int32(0)

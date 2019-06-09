@@ -49,7 +49,7 @@ const packetHeaderSize = 4
 
 type transport struct {
 	policy           *TransportPolicy
-	connection       net.Conn
+	connection       connection
 	inputByteStream  byte_stream.ByteStream
 	outputByteStream byte_stream.ByteStream
 	openness         int32
@@ -60,18 +60,18 @@ func (self *transport) connect(context_ context.Context, policy *TransportPolicy
 		return e
 	}
 
-	connection, e := (&net.Dialer{}).DialContext(context_, "tcp", serverAddress)
+	rawConnection, e := (&net.Dialer{}).DialContext(context_, "tcp", serverAddress)
 
 	if e != nil {
 		return e
 	}
 
-	self.initialize(policy, connection.(net.Conn))
+	self.initialize(policy, rawConnection)
 	return nil
 }
 
-func (self *transport) accept(policy *TransportPolicy, connection net.Conn) *transport {
-	return self.initialize(policy, connection)
+func (self *transport) accept(policy *TransportPolicy, rawConnection net.Conn) *transport {
+	return self.initialize(policy, rawConnection)
 }
 
 func (self *transport) close() error {
@@ -79,9 +79,8 @@ func (self *transport) close() error {
 		return TransportClosedError
 	}
 
-	e := self.connection.Close()
+	e := self.connection.close()
 	self.policy = nil
-	self.connection = nil
 	self.inputByteStream.GC()
 	self.outputByteStream.GC()
 	self.openness = -1
@@ -181,17 +180,8 @@ func (self *transport) flush(context_ context.Context, timeout time.Duration) er
 		return TransportClosedError
 	}
 
-	deadline, e := makeDeadline(context_, timeout)
-
-	if e != nil {
-		return e
-	}
-
-	if e := self.connection.SetWriteDeadline(deadline); e != nil {
-		return e
-	}
-
-	n, e := self.connection.Write(self.outputByteStream.GetData())
+	deadline := makeDeadline(context_, timeout)
+	n, e := self.connection.write(context_, deadline, self.outputByteStream.GetData())
 	self.outputByteStream.Skip(n)
 	return e
 }
@@ -200,13 +190,13 @@ func (self *transport) isClosed() bool {
 	return self.openness != 1
 }
 
-func (self *transport) initialize(policy *TransportPolicy, connection net.Conn) *transport {
+func (self *transport) initialize(policy *TransportPolicy, rawConnection net.Conn) *transport {
 	if self.openness != 0 {
 		panic(errors.New("zk: transport already initialized"))
 	}
 
 	self.policy = policy.Validate()
-	self.connection = connection
+	self.connection.establish(rawConnection)
 	self.inputByteStream.ReserveBuffer(int(policy.InitialReadBufferSize))
 	self.openness = 1
 	return self
@@ -217,23 +207,15 @@ func (self *transport) doPeek(context_ context.Context, timeout time.Duration) (
 		return nil, TransportClosedError
 	}
 
-	deadlineIsSet := false
+	deadlineIsMade := false
+	var deadline time.Time
 
 	if self.inputByteStream.GetDataSize() < packetHeaderSize {
-		deadline, e := makeDeadline(context_, timeout)
-
-		if e != nil {
-			return nil, e
-		}
-
-		if e := self.connection.SetReadDeadline(deadline); e != nil {
-			return nil, e
-		}
-
-		deadlineIsSet = true
+		deadline = makeDeadline(context_, timeout)
+		deadlineIsMade = true
 
 		for {
-			dataSize, e := self.connection.Read(self.inputByteStream.GetBuffer())
+			dataSize, e := self.connection.read(context_, deadline, self.inputByteStream.GetBuffer())
 
 			if dataSize == 0 {
 				return nil, e
@@ -261,22 +243,14 @@ func (self *transport) doPeek(context_ context.Context, timeout time.Duration) (
 	packetSize := packetHeaderSize + packetPayloadSize
 
 	if bufferSize := packetSize - self.inputByteStream.GetDataSize(); bufferSize >= 1 {
-		if !deadlineIsSet {
-			deadline, e := makeDeadline(context_, timeout)
-
-			if e != nil {
-				return nil, e
-			}
-
-			if e := self.connection.SetReadDeadline(deadline); e != nil {
-				return nil, e
-			}
+		if !deadlineIsMade {
+			deadline = makeDeadline(context_, timeout)
 		}
 
 		self.inputByteStream.ReserveBuffer(bufferSize)
 
 		for {
-			dataSize, e := self.connection.Read(self.inputByteStream.GetBuffer())
+			dataSize, e := self.connection.read(context_, deadline, self.inputByteStream.GetBuffer())
 
 			if dataSize == 0 {
 				return nil, e
@@ -320,17 +294,22 @@ func (self *transport) tryPeek(dataOffset int) ([]byte, bool) {
 	return packet, true
 }
 
-func makeDeadline(context_ context.Context, timeout time.Duration) (time.Time, error) {
-	if e := context_.Err(); e != nil {
-		return time.Time{}, e
-	}
-
+func makeDeadline(context_ context.Context, timeout time.Duration) time.Time {
 	deadline1, ok := context_.Deadline()
-	deadline2 := time.Now().Add(timeout)
 
-	if ok && deadline1.Before(deadline2) {
-		return deadline1, nil
+	if timeout < 1 {
+		if ok {
+			return deadline1
+		} else {
+			return time.Time{}
+		}
 	} else {
-		return deadline2, nil
+		deadline2 := time.Now().Add(timeout)
+
+		if ok && deadline1.Before(deadline2) {
+			return deadline1
+		} else {
+			return deadline2
+		}
 	}
 }

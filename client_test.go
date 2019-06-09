@@ -115,7 +115,7 @@ func TestClientExists(t *testing.T) {
 			t.Errorf("%#v", rsp)
 		}
 
-		c.session.transport.connection.Close()
+		c.session.transport.connection.raw.Close()
 
 		go func() {
 			_, e := c.Create(context.Background(), "foo", []byte("bar"), nil, CreatePersistent, true)
@@ -143,7 +143,7 @@ func TestClientExists(t *testing.T) {
 			t.Error()
 		}
 
-		c.session.transport.connection.Close()
+		c.session.transport.connection.raw.Close()
 
 		go func() {
 			e := c.Delete(context.Background(), "foo", -1, true)
@@ -259,7 +259,7 @@ func TestClientGetChildren(t *testing.T) {
 			t.Errorf("%#v", rsp.Children)
 		}
 
-		c.session.transport.connection.Close()
+		c.session.transport.connection.raw.Close()
 
 		go func() {
 			_, e := c.Create(context.Background(), "foo/son", []byte("son"), nil, CreatePersistent, true)
@@ -287,7 +287,7 @@ func TestClientGetChildren(t *testing.T) {
 			t.Errorf("%#v", rsp2.Children)
 		}
 
-		c.session.transport.connection.Close()
+		c.session.transport.connection.raw.Close()
 
 		go func() {
 			e := c.Delete(context.Background(), "foo/son", -1, true)
@@ -336,7 +336,7 @@ func TestClientGetSetData(t *testing.T) {
 			t.Errorf("%#v", rsp.Data)
 		}
 
-		c.session.transport.connection.Close()
+		c.session.transport.connection.raw.Close()
 
 		go func() {
 			_, e := c.SetData(context.Background(), "foo", []byte("bar2"), -1, true)
@@ -364,7 +364,7 @@ func TestClientGetSetData(t *testing.T) {
 			t.Errorf("%#v", rsp.Data)
 		}
 
-		c.session.transport.connection.Close()
+		c.session.transport.connection.raw.Close()
 
 		go func() {
 			e := c.Delete(context.Background(), "foo", -1, true)
