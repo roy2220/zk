@@ -305,7 +305,7 @@ func (self *session) connect(context_ context.Context, serverAddress string, aut
 	if self.id == 0 {
 		self.policy.Logger.Infof("session connection: serverAddress=%#v", serverAddress)
 	} else {
-		self.policy.Logger.Infof("session connection: id=%#x, serverAddress=%#v", self.id, serverAddress)
+		self.policy.Logger.Infof("session connection: sessionID=%#x, serverAddress=%#v", self.id, serverAddress)
 	}
 
 	var eventType SessionEventType
@@ -339,7 +339,7 @@ func (self *session) connect(context_ context.Context, serverAddress string, aut
 	}
 
 	self.setState(SessionEventConnected, SessionConnected)
-	self.policy.Logger.Infof("session establishment: serverAddress=%#v, id=%#x, timeout=%#v", serverAddress, self.id, self.timeout/time.Millisecond)
+	self.policy.Logger.Infof("session establishment: serverAddress=%#v, sessionID=%#x, timeout=%#v", serverAddress, self.id, self.timeout/time.Millisecond)
 	return nil
 }
 
@@ -464,7 +464,7 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 	}
 
 	atomic.StoreInt32(&self.state, int32(newState))
-	self.policy.Logger.Infof("session state change: id=%#x, eventType=%#v, oldState=%#v, newState=%#v", self.id, eventType, oldState, newState)
+	self.policy.Logger.Infof("session state change: sessionID=%#x, eventType=%#v, oldState=%#v, newState=%#v", self.id, eventType, oldState, newState)
 	self.lockOfListeners.Lock()
 
 	for listener := range self.listeners {
@@ -805,7 +805,7 @@ func (self *session) executeOperationSync(
 				self.fireWatcherEvent(watcherEvent_.Type, watcherEvent_.Path)
 			case -2: // -2 is the xid for pings
 			default:
-				self.policy.Logger.Warningf("ignored reply: id=%#x, replyHeader=%#v", self.id, replyHeader_)
+				self.policy.Logger.Warningf("ignored reply: sessionID=%#x, replyHeader=%#v", self.id, replyHeader_)
 			}
 
 			if e := transport_.skip(data); e != nil {
@@ -856,7 +856,7 @@ func (self *session) fireWatcherEvent(watcherEventType WatcherEventType, path st
 	}
 
 	if watcherCount == 0 {
-		self.policy.Logger.Warningf("missing watchers: id=%#x, watcherEventType=%#v, path=%#v", self.id, watcherEventType, path)
+		self.policy.Logger.Warningf("missing watchers: sessionID=%#x, watcherEventType=%#v, path=%#v", self.id, watcherEventType, path)
 	}
 }
 
@@ -1018,7 +1018,7 @@ func (self *session) receiveResponses(context_ context.Context) error {
 					}
 
 					if extraDataSize := len(data2) - dataOffset; extraDataSize >= 1 {
-						self.policy.Logger.Warningf("extra data of response: id=%#x, responseType=%v, extraDataSize=%#v", self.id, operation_.responseType, extraDataSize)
+						self.policy.Logger.Warningf("extra data of response: sessionID=%#x, responseType=%v, extraDataSize=%#v", self.id, operation_.responseType, extraDataSize)
 					}
 
 					operation_.callback(response, 0)
@@ -1037,13 +1037,13 @@ func (self *session) receiveResponses(context_ context.Context) error {
 					}
 
 					if extraDataSize := len(data2) - dataOffset; extraDataSize >= 1 {
-						self.policy.Logger.Warningf("extra data of watcher event: id=%#x, extraDataSize=%#v", self.id, extraDataSize)
+						self.policy.Logger.Warningf("extra data of watcher event: sessionID=%#x, extraDataSize=%#v", self.id, extraDataSize)
 					}
 
 					self.fireWatcherEvent(watcherEvent_.Type, watcherEvent_.Path)
 				case -2: // -2 is the xid for pings
 				default:
-					self.policy.Logger.Warningf("ignored reply: id=%#x, replyHeader=%#v", self.id, replyHeader_)
+					self.policy.Logger.Warningf("ignored reply: sessionID=%#x, replyHeader=%#v", self.id, replyHeader_)
 				}
 			}
 		}
