@@ -231,7 +231,7 @@ type session struct {
 	watchers          [3]map[string]map[*Watcher]struct{}
 }
 
-func (self *session) initialize(policy *SessionPolicy) *session {
+func (self *session) Initialize(policy *SessionPolicy) *session {
 	if self.state != 0 {
 		panic(errors.New("zk: session already initialized"))
 	}
@@ -249,18 +249,18 @@ func (self *session) initialize(policy *SessionPolicy) *session {
 	return self
 }
 
-func (self *session) close() {
+func (self *session) Close() {
 	self.setState(SessionEventNo, SessionClosed)
 }
 
-func (self *session) addListener(maxNumberOfStateChanges int) (*SessionListener, error) {
-	if self.isClosed() {
+func (self *session) AddListener(maxNumberOfStateChanges int) (*SessionListener, error) {
+	if self.IsClosed() {
 		return nil, SessionClosedError
 	}
 
 	self.lockOfListeners.Lock()
 
-	if self.isClosed() {
+	if self.IsClosed() {
 		self.lockOfListeners.Unlock()
 		return nil, SessionClosedError
 	}
@@ -278,15 +278,15 @@ func (self *session) addListener(maxNumberOfStateChanges int) (*SessionListener,
 	return listener, nil
 }
 
-func (self *session) removeListener(listener *SessionListener) error {
-	if self.isClosed() {
+func (self *session) RemoveListener(listener *SessionListener) error {
+	if self.IsClosed() {
 		return SessionClosedError
 	}
 
 	close(listener.stateChanges)
 	self.lockOfListeners.Lock()
 
-	if self.isClosed() {
+	if self.IsClosed() {
 		self.lockOfListeners.Unlock()
 		return SessionClosedError
 	}
@@ -301,7 +301,7 @@ func (self *session) removeListener(listener *SessionListener) error {
 	return nil
 }
 
-func (self *session) connect(context_ context.Context, serverAddress string, authInfos []AuthInfo) error {
+func (self *session) Connect(context_ context.Context, serverAddress string, authInfos []AuthInfo) error {
 	if self.id == 0 {
 		self.policy.Logger.Infof("session connection: serverAddress=%#v", serverAddress)
 	} else {
@@ -343,7 +343,7 @@ func (self *session) connect(context_ context.Context, serverAddress string, aut
 	return nil
 }
 
-func (self *session) dispatch(context_ context.Context, cancel context.CancelFunc) error {
+func (self *session) Dispatch(context_ context.Context, cancel context.CancelFunc) error {
 	if state := self.getState(); state != SessionConnected {
 		panic(&invalidSessionStateError{fmt.Sprintf("state=%#v", state)})
 	}
@@ -364,7 +364,7 @@ func (self *session) dispatch(context_ context.Context, cancel context.CancelFun
 	return e
 }
 
-func (self *session) executeOperation(
+func (self *session) ExecuteOperation(
 	context_ context.Context,
 	opCode OpCode,
 	request interface{},
@@ -372,19 +372,19 @@ func (self *session) executeOperation(
 	autoRetryOperation bool,
 	callback func(interface{}, ErrorCode),
 ) error {
-	if self.isClosed() {
+	if self.IsClosed() {
 		return &Error{self.getErrorCode(), fmt.Sprintf("opCode=%#v, request=%#v", opCode, request)}
 	}
 
 	operation_ := operation{
-		opCode:       opCode,
-		request:      request,
-		responseType: responseType,
-		autoRetry:    autoRetryOperation,
-		callback:     callback,
+		OpCode:       opCode,
+		Request:      request,
+		ResponseType: responseType,
+		AutoRetry:    autoRetryOperation,
+		Callback:     callback,
 	}
 
-	if e := self.dequeOfOperations.AppendNode(context_, &operation_.listNode); e != nil {
+	if e := self.dequeOfOperations.AppendNode(context_, &operation_.ListNode); e != nil {
 		if e == semaphore.SemaphoreClosedError {
 			e = &Error{self.getErrorCode(), fmt.Sprintf("opCode=%#v, request=%#v", opCode, request)}
 		}
@@ -395,7 +395,7 @@ func (self *session) executeOperation(
 	return nil
 }
 
-func (self *session) addWatcher(watcherType WatcherType, path string) *Watcher {
+func (self *session) AddWatcher(watcherType WatcherType, path string) *Watcher {
 	watcher := &Watcher{
 		type_: watcherType,
 		path:  path,
@@ -414,11 +414,11 @@ func (self *session) addWatcher(watcherType WatcherType, path string) *Watcher {
 	return watcher
 }
 
-func (self *session) isClosed() bool {
+func (self *session) IsClosed() bool {
 	return self.getErrorCode() != 0
 }
 
-func (self *session) getTimeout() time.Duration {
+func (self *session) GetTimeout() time.Duration {
 	return self.timeout
 }
 
@@ -485,11 +485,11 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 				self.pendingOperations.Delete(key)
 				operation_ := value.(*operation)
 
-				if operationsAreRetriable && operation_.autoRetry {
-					list_.AppendNode(&operation_.listNode)
+				if operationsAreRetriable && operation_.AutoRetry {
+					list_.AppendNode(&operation_.ListNode)
 					retriedOperationCount++
 				} else {
-					operation_.callback(nil, errorCode)
+					operation_.Callback(nil, errorCode)
 					completedOperationCount++
 				}
 
@@ -514,12 +514,12 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 
 			self.password = nil
 
-			if !self.transport.isClosed() {
+			if !self.transport.IsClosed() {
 				if self.id != 0 {
 					self.doClose(&self.transport)
 				}
 
-				self.transport.close()
+				self.transport.Close()
 			}
 
 			{
@@ -528,8 +528,8 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 				getListNode := list_.GetNodes()
 
 				for listNode := getListNode(); listNode != nil; listNode = getListNode() {
-					operation_ := (*operation)(listNode.GetContainer(unsafe.Offsetof(operation{}.listNode)))
-					operation_.callback(nil, errorCode2)
+					operation_ := (*operation)(listNode.GetContainer(unsafe.Offsetof(operation{}.ListNode)))
+					operation_.Callback(nil, errorCode2)
 				}
 			}
 
@@ -537,10 +537,10 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 				self.pendingOperations.Delete(key)
 				operation_ := value.(*operation)
 
-				if operationsAreRetriable && operation_.autoRetry {
-					operation_.callback(nil, errorCode2)
+				if operationsAreRetriable && operation_.AutoRetry {
+					operation_.Callback(nil, errorCode2)
 				} else {
-					operation_.callback(nil, errorCode)
+					operation_.Callback(nil, errorCode)
 				}
 
 				return true
@@ -566,16 +566,16 @@ func (self *session) setState(eventType SessionEventType, newState SessionState)
 func (self *session) connectTransport(context_ context.Context, serverAddress string, callback func(*transport) error) error {
 	var transport_ transport
 
-	if e := transport_.connect(context_, self.policy.Transport, serverAddress); e != nil {
+	if e := transport_.Connect(context_, self.policy.Transport, serverAddress); e != nil {
 		return e
 	}
 
 	if e := callback(&transport_); e != nil {
-		transport_.close()
+		transport_.Close()
 		return e
 	}
 
-	self.transport.close()
+	self.transport.Close()
 	self.transport = transport_
 	return nil
 }
@@ -589,18 +589,18 @@ func (self *session) doConnect(context_ context.Context, transport_ *transport, 
 		Passwd:          self.password,
 	}
 
-	if e := transport_.write(func(byteStream *byte_stream.ByteStream) error {
+	if e := transport_.Write(func(byteStream *byte_stream.ByteStream) error {
 		serializeRecord(&request, byteStream)
 		return nil
 	}); e != nil {
 		return e
 	}
 
-	if e := transport_.flush(context_, minSessionTimeout); e != nil {
+	if e := transport_.Flush(context_, minSessionTimeout); e != nil {
 		return e
 	}
 
-	data, e := transport_.peek(context_, minSessionTimeout)
+	data, e := transport_.Peek(context_, minSessionTimeout)
 
 	if e != nil {
 		return e
@@ -613,7 +613,7 @@ func (self *session) doConnect(context_ context.Context, transport_ *transport, 
 		return e
 	}
 
-	if e := transport_.skip(data); e != nil {
+	if e := transport_.Skip(data); e != nil {
 		return e
 	}
 
@@ -642,14 +642,14 @@ func (self *session) doClose(transport_ *transport) error {
 		Type: OpCloseSession,
 	}
 
-	if e := transport_.write(func(byteStream *byte_stream.ByteStream) error {
+	if e := transport_.Write(func(byteStream *byte_stream.ByteStream) error {
 		serializeRecord(&requestHeader_, byteStream)
 		return nil
 	}); e != nil {
 		return e
 	}
 
-	if e := transport_.flush(context.Background(), closeTimeoutOfSession); e != nil {
+	if e := transport_.Flush(context.Background(), closeTimeoutOfSession); e != nil {
 		return e
 	}
 
@@ -762,7 +762,7 @@ func (self *session) executeOperationSync(
 		Type: opCode,
 	}
 
-	if e := transport_.write(func(byteStream *byte_stream.ByteStream) error {
+	if e := transport_.Write(func(byteStream *byte_stream.ByteStream) error {
 		serializeRecord(&requestHeader_, byteStream)
 		serializeRecord(request, byteStream)
 		return nil
@@ -770,14 +770,14 @@ func (self *session) executeOperationSync(
 		return nil, e
 	}
 
-	if e := transport_.flush(context_, minSessionTimeout); e != nil {
+	if e := transport_.Flush(context_, minSessionTimeout); e != nil {
 		return nil, e
 	}
 
 	var replyHeader_ replyHeader
 
 	for {
-		data, e := transport_.peek(context_, minSessionTimeout)
+		data, e := transport_.Peek(context_, minSessionTimeout)
 
 		if e != nil {
 			return nil, e
@@ -808,7 +808,7 @@ func (self *session) executeOperationSync(
 				self.policy.Logger.Warningf("ignored reply: sessionID=%#x, replyHeader=%#v", self.id, replyHeader_)
 			}
 
-			if e := transport_.skip(data); e != nil {
+			if e := transport_.Skip(data); e != nil {
 				return nil, e
 			}
 
@@ -825,7 +825,7 @@ func (self *session) executeOperationSync(
 			return nil, e
 		}
 
-		if e := transport_.skip(data); e != nil {
+		if e := transport_.Skip(data); e != nil {
 			return nil, e
 		}
 
@@ -863,12 +863,12 @@ func (self *session) fireWatcherEvent(watcherEventType WatcherEventType, path st
 func (self *session) sendRequests(context_ context.Context, cancel context.CancelFunc) error {
 	error_ := make(chan error, 2)
 
-	type task struct {
-		list              *list.List
-		numberOfListNodes int32
+	type Task struct {
+		List              *list.List
+		NumberOfListNodes int32
 	}
 
-	tasks := make(chan task)
+	tasks := make(chan Task)
 
 	go func() {
 		list1 := (&list.List{}).Initialize()
@@ -883,7 +883,7 @@ func (self *session) sendRequests(context_ context.Context, cancel context.Cance
 			}
 
 			select {
-			case tasks <- task{list1, numberOfListNodes}:
+			case tasks <- Task{list1, numberOfListNodes}:
 			case <-context_.Done():
 				self.dequeOfOperations.DiscardNodeRemovals(list1, numberOfListNodes)
 				error_ <- context_.Err()
@@ -895,25 +895,25 @@ func (self *session) sendRequests(context_ context.Context, cancel context.Cance
 		}
 	}()
 
-	var task_ task
+	var task Task
 
 	cleanup := func(ok bool) {
-		if task_.list != nil {
+		if task.List != nil {
 			if ok {
-				getListNode := task_.list.GetNodesSafely()
+				getListNode := task.List.GetNodesSafely()
 
 				for listNode := getListNode(); listNode != nil; listNode = getListNode() {
 					listNode.Reset()
-					operation_ := (*operation)(listNode.GetContainer(unsafe.Offsetof(operation{}.listNode)))
+					operation_ := (*operation)(listNode.GetContainer(unsafe.Offsetof(operation{}.ListNode)))
 
-					if !operation_.autoRetry {
-						operation_.request = nil
+					if !operation_.AutoRetry {
+						operation_.Request = nil
 					}
 
-					self.pendingOperations.Store(operation_.xid, operation_)
+					self.pendingOperations.Store(operation_.Xid, operation_)
 				}
 			} else {
-				self.dequeOfOperations.DiscardNodeRemovals(task_.list, task_.numberOfListNodes)
+				self.dequeOfOperations.DiscardNodeRemovals(task.List, task.NumberOfListNodes)
 			}
 		}
 
@@ -924,26 +924,26 @@ func (self *session) sendRequests(context_ context.Context, cancel context.Cance
 	}
 
 	for {
-		task_ = task{nil, 0}
+		task = Task{nil, 0}
 
 		select {
 		case e := <-error_:
 			return e
-		case task_ = <-tasks:
+		case task = <-tasks:
 		case <-time.After(self.getMinPingInterval()):
 			select {
-			case task_ = <-tasks:
+			case task = <-tasks:
 			default:
 			}
 		}
 
-		if task_.list == nil {
+		if task.List == nil {
 			requestHeader_ := requestHeader{
 				Xid:  -2,
 				Type: OpPing,
 			}
 
-			if e := self.transport.write(func(byteStream *byte_stream.ByteStream) error {
+			if e := self.transport.Write(func(byteStream *byte_stream.ByteStream) error {
 				serializeRecord(&requestHeader_, byteStream)
 				return nil
 			}); e != nil {
@@ -951,20 +951,20 @@ func (self *session) sendRequests(context_ context.Context, cancel context.Cance
 				return e
 			}
 		} else {
-			getListNode := task_.list.GetNodes()
+			getListNode := task.List.GetNodes()
 
 			for listNode := getListNode(); listNode != nil; listNode = getListNode() {
-				operation_ := (*operation)(listNode.GetContainer(unsafe.Offsetof(operation{}.listNode)))
-				operation_.xid = self.getXid()
+				operation_ := (*operation)(listNode.GetContainer(unsafe.Offsetof(operation{}.ListNode)))
+				operation_.Xid = self.getXid()
 
 				requestHeader_ := requestHeader{
-					Xid:  operation_.xid,
-					Type: operation_.opCode,
+					Xid:  operation_.Xid,
+					Type: operation_.OpCode,
 				}
 
-				if e := self.transport.write(func(byteStream *byte_stream.ByteStream) error {
+				if e := self.transport.Write(func(byteStream *byte_stream.ByteStream) error {
 					serializeRecord(&requestHeader_, byteStream)
-					serializeRecord(operation_.request, byteStream)
+					serializeRecord(operation_.Request, byteStream)
 					return nil
 				}); e != nil {
 					cleanup(false)
@@ -975,7 +975,7 @@ func (self *session) sendRequests(context_ context.Context, cancel context.Cance
 
 		cleanup(true)
 
-		if e := self.transport.flush(context_, 0); e != nil {
+		if e := self.transport.Flush(context_, 0); e != nil {
 			cancel()
 			<-error_
 			return e
@@ -987,7 +987,7 @@ func (self *session) receiveResponses(context_ context.Context) error {
 	var replyHeader_ replyHeader
 
 	for {
-		data, e := self.transport.peekInBatch(context_, 2*self.getMinPingInterval())
+		data, e := self.transport.PeekInBatch(context_, 2*self.getMinPingInterval())
 
 		if e != nil {
 			return e
@@ -1011,19 +1011,19 @@ func (self *session) receiveResponses(context_ context.Context) error {
 				operation_ := value.(*operation)
 
 				if replyHeader_.Err == 0 {
-					response := reflect.New(operation_.responseType).Interface()
+					response := reflect.New(operation_.ResponseType).Interface()
 
 					if e := deserializeRecord(response, data2, &dataOffset); e != nil {
 						return e
 					}
 
 					if extraDataSize := len(data2) - dataOffset; extraDataSize >= 1 {
-						self.policy.Logger.Warningf("extra data of response: sessionID=%#x, responseType=%v, extraDataSize=%#v", self.id, operation_.responseType, extraDataSize)
+						self.policy.Logger.Warningf("extra data of response: sessionID=%#x, responseType=%v, extraDataSize=%#v", self.id, operation_.ResponseType, extraDataSize)
 					}
 
-					operation_.callback(response, 0)
+					operation_.Callback(response, 0)
 				} else {
-					operation_.callback(nil, replyHeader_.Err)
+					operation_.Callback(nil, replyHeader_.Err)
 				}
 
 				completedOperationCount++
@@ -1050,7 +1050,7 @@ func (self *session) receiveResponses(context_ context.Context) error {
 
 		self.dequeOfOperations.CommitNodeRemovals(completedOperationCount)
 
-		if e := self.transport.skipInBatch(data); e != nil {
+		if e := self.transport.SkipInBatch(data); e != nil {
 			return e
 		}
 	}
@@ -1074,13 +1074,13 @@ func (self *session) getXid() int32 {
 }
 
 type operation struct {
-	listNode     list.ListNode
-	xid          int32
-	opCode       OpCode
-	request      interface{}
-	responseType reflect.Type
-	autoRetry    bool
-	callback     func(interface{}, ErrorCode)
+	ListNode     list.ListNode
+	Xid          int32
+	OpCode       OpCode
+	Request      interface{}
+	ResponseType reflect.Type
+	AutoRetry    bool
+	Callback     func(interface{}, ErrorCode)
 }
 
 type invalidSessionStateError struct {

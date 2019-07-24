@@ -25,7 +25,7 @@ func (self *Client) Initialize(
 	defaultACL []ACL,
 	pathPrefix string,
 ) *Client {
-	self.session.initialize(sessionPolicy)
+	self.session.Initialize(sessionPolicy)
 
 	if serverAddresses == nil {
 		serverAddresses = []string{"127.0.0.1:2181"}
@@ -41,7 +41,7 @@ func (self *Client) Initialize(
 		values[i] = serverAddress
 	}
 
-	self.serverAddresses.Reset(values, 3, self.session.getTimeout())
+	self.serverAddresses.Reset(values, 3, self.session.GetTimeout())
 	self.authInfos = authInfos
 
 	if defaultACL == nil {
@@ -71,15 +71,15 @@ func (self *Client) Initialize(
 }
 
 func (self *Client) AddSessionListener(maxNumberOfSessionStateChanges int) (*SessionListener, error) {
-	return self.session.addListener(maxNumberOfSessionStateChanges)
+	return self.session.AddListener(maxNumberOfSessionStateChanges)
 }
 
 func (self *Client) RemoveSessionListener(sessionListener *SessionListener) error {
-	return self.session.removeListener(sessionListener)
+	return self.session.RemoveListener(sessionListener)
 }
 
 func (self *Client) Run(context_ context.Context) error {
-	if self.session.isClosed() {
+	if self.session.IsClosed() {
 		return nil
 	}
 
@@ -95,7 +95,7 @@ func (self *Client) Run(context_ context.Context) error {
 
 		context2, cancel2 := context.WithDeadline(context_, self.serverAddresses.WhenNextValueUsable())
 		serverAddress := value.(string)
-		e = self.session.connect(context2, serverAddress, self.authInfos)
+		e = self.session.Connect(context2, serverAddress, self.authInfos)
 		cancel2()
 
 		if e != nil {
@@ -108,8 +108,8 @@ func (self *Client) Run(context_ context.Context) error {
 			continue
 		}
 
-		self.serverAddresses.Reset(nil, 9, self.session.getTimeout())
-		e = self.session.dispatch(context.WithCancel(context_))
+		self.serverAddresses.Reset(nil, 9, self.session.GetTimeout())
+		e = self.session.Dispatch(context.WithCancel(context_))
 
 		if e != nil {
 			if e != io.EOF {
@@ -122,8 +122,8 @@ func (self *Client) Run(context_ context.Context) error {
 		}
 	}
 
-	if !self.session.isClosed() {
-		self.session.close()
+	if !self.session.IsClosed() {
+		self.session.Close()
 	}
 
 	self.serverAddresses.GC()
@@ -474,7 +474,7 @@ func (self *Client) executeOperation(
 		error_ <- nil
 	}
 
-	if e := self.session.executeOperation(
+	if e := self.session.ExecuteOperation(
 		context_,
 		opCode,
 		request,
@@ -511,13 +511,13 @@ func (self *Client) doExists(context_ context.Context, path string, watch bool, 
 	callback := func(value interface{}, toleratedErrorCode ErrorCode) {
 		if toleratedErrorCode == ErrorNoNode {
 			if watch {
-				watcher = self.session.addWatcher(WatcherExist, path)
+				watcher = self.session.AddWatcher(WatcherExist, path)
 			}
 		} else {
 			response = value.(*ExistsResponse)
 
 			if watch {
-				watcher = self.session.addWatcher(WatcherData, path)
+				watcher = self.session.AddWatcher(WatcherData, path)
 			}
 		}
 	}
@@ -552,7 +552,7 @@ func (self *Client) doGetChildren(context_ context.Context, path string, watch b
 		response = value.(*GetChildrenResponse)
 
 		if watch {
-			watcher = self.session.addWatcher(WatcherChild, path)
+			watcher = self.session.AddWatcher(WatcherChild, path)
 		}
 	}
 
@@ -586,7 +586,7 @@ func (self *Client) doGetChildren2(context_ context.Context, path string, watch 
 		response = value.(*GetChildren2Response)
 
 		if watch {
-			watcher = self.session.addWatcher(WatcherChild, path)
+			watcher = self.session.AddWatcher(WatcherChild, path)
 		}
 	}
 
@@ -620,7 +620,7 @@ func (self *Client) doGetData(context_ context.Context, path string, watch bool,
 		response = value.(*GetDataResponse)
 
 		if watch {
-			watcher = self.session.addWatcher(WatcherData, path)
+			watcher = self.session.AddWatcher(WatcherData, path)
 		}
 	}
 

@@ -11,7 +11,7 @@ type connection struct {
 	preRWCs chan *connectionPreRWC
 }
 
-func (self *connection) establish(raw net.Conn) {
+func (self *connection) Establish(raw net.Conn) {
 	self.raw = raw
 	self.preRWCs = make(chan *connectionPreRWC, 2)
 
@@ -58,7 +58,7 @@ func (self *connection) establish(raw net.Conn) {
 	}()
 }
 
-func (self *connection) read(context_ context.Context, deadline time.Time, buffer []byte) (int, error) {
+func (self *connection) Read(context_ context.Context, deadline time.Time, buffer []byte) (int, error) {
 	completion := make(chan struct{}, 1)
 	self.preRWCs <- &connectionPreRWC{'R', context_.Done(), deadline, completion}
 	<-completion
@@ -73,7 +73,7 @@ func (self *connection) read(context_ context.Context, deadline time.Time, buffe
 	return n, e
 }
 
-func (self *connection) write(context_ context.Context, deadline time.Time, data []byte) (int, error) {
+func (self *connection) Write(context_ context.Context, deadline time.Time, data []byte) (int, error) {
 	completion := make(chan struct{}, 1)
 	self.preRWCs <- &connectionPreRWC{'W', context_.Done(), deadline, completion}
 	<-completion
@@ -88,7 +88,7 @@ func (self *connection) write(context_ context.Context, deadline time.Time, data
 	return n, e
 }
 
-func (self *connection) close() error {
+func (self *connection) Close() error {
 	completion := make(chan struct{}, 1)
 	self.preRWCs <- &connectionPreRWC{'C', nil, time.Time{}, completion}
 	<-completion
